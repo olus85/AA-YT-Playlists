@@ -21,4 +21,5 @@
     <string name="edit">Bearbeiten</string>
     <string name="error_fetch_failed">Metadaten konnten nicht geladen werden</string>
     <string name="error_no_app">Keine App gefunden</string>
+    <string name="search_cover_web">Cover im Web suchen</string>
 </resources>

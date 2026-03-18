@@ -1,5 +1,7 @@
 package app.olus.ytmusic.autolauncher.ui.compose.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -577,6 +580,20 @@ fun EditPlaylistDialog(
                         cursorColor = YTRed
                     )
                 )
+
+                val context = LocalContext.current
+                TextButton(
+                    onClick = {
+                        val encodedQuery = Uri.encode(newTitle)
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?tbm=isch&q=$encodedQuery"))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.search_cover_web), color = MaterialTheme.colorScheme.onSurface)
+                }
             }
         },
         confirmButton = {

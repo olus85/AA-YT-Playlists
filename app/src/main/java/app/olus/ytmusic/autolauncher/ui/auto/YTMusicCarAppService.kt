@@ -26,6 +26,11 @@ import coil.request.CachePolicy
 import coil.size.Precision
 import coil.size.Scale
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import app.olus.ytmusic.autolauncher.service.LauncherMediaSession
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
@@ -56,21 +61,33 @@ class YTMusicCarAppService : CarAppService() {
 }
 
 class YTMusicCarSession(private val repository: PlaylistRepository) : Session() {
+    val mediaSession by lazy { LauncherMediaSession(carContext) }
+    val currentlyPlayingUrl = MutableStateFlow<String?>(null)
+
     override fun onCreateScreen(intent: Intent): Screen {
         Log.d(TAG, "onCreateScreen")
-        return PlaylistGridScreen(carContext, repository)
+        
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                mediaSession.release()
+            }
+        })
+
+        return PlaylistGridScreen(carContext, repository, this)
     }
 }
 
 class PlaylistGridScreen(
     carContext: CarContext,
-    private val repository: PlaylistRepository
+    private val repository: PlaylistRepository,
+    private val session: YTMusicCarSession
 ) : Screen(carContext) {
 
     private var playlists: List<Playlist> = emptyList()
     private val playlistIcons = LruCache<Int, CarIcon>(50)
     private val imageLoader = ImageLoader(carContext)
     private var started = false
+    private var playingUrl: String? = null
 
     override fun onGetTemplate(): Template {
         Log.d(TAG, "onGetTemplate: ${playlists.size} items, started=$started")
@@ -100,6 +117,12 @@ class PlaylistGridScreen(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error observing playlists", e)
+            }
+        }
+        lifecycleScope.launch {
+            session.currentlyPlayingUrl.collect { url ->
+                playingUrl = url
+                invalidate()
             }
         }
     }
@@ -152,8 +175,28 @@ class PlaylistGridScreen(
                     .setImage(carIcon, androidx.car.app.model.Row.IMAGE_TYPE_LARGE)
                     .setOnClickListener {
                         Log.d(TAG, "Clicked: ${playlist.title}")
-                        screenManager.push(PlaylistDetailScreen(carContext, playlist))
+                        screenManager.push(PlaylistDetailScreen(carContext, playlist, session))
                     }
+                    
+                val isPlaying = playingUrl == playlist.url
+                val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                val actionIcon = CarIcon.Builder(IconCompat.createWithResource(carContext, iconRes)).build()
+                rowBuilder.addAction(
+                    Action.Builder()
+                        .setIcon(actionIcon)
+                        .setOnClickListener {
+                            if (isPlaying) {
+                                session.currentlyPlayingUrl.value = null
+                                session.mediaSession.setPlaying(false)
+                                pauseMusic()
+                            } else {
+                                session.currentlyPlayingUrl.value = playlist.url
+                                session.mediaSession.setPlaying(true)
+                                openPlaylistUrl(playlist.url)
+                            }
+                        }
+                        .build()
+                )
 
                 if (subtitle.isNotEmpty()) {
                     rowBuilder.addText(subtitle)
@@ -188,11 +231,37 @@ class PlaylistGridScreen(
             IconCompat.createWithResource(carContext, android.R.drawable.ic_menu_gallery)
         ).build()
     }
+
+    private fun openPlaylistUrl(url: String) {
+        try {
+            val intent = Intent("app.olus.ytmusic.autolauncher.ACTION_OPEN_PLAYLIST").apply {
+                `package` = carContext.packageName
+                putExtra("playlist_url", url)
+            }
+            carContext.sendBroadcast(intent)
+            CarToast.makeText(carContext, "Wird gestartet...", CarToast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            CarToast.makeText(carContext, "Fehler: ${e.message}", CarToast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun pauseMusic() {
+        try {
+            val audioManager = carContext.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            val downEvent = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE)
+            val upEvent = android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE)
+            audioManager.dispatchMediaKeyEvent(downEvent)
+            audioManager.dispatchMediaKeyEvent(upEvent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to pause music", e)
+        }
+    }
 }
 
 class PlaylistDetailScreen(
     carContext: CarContext,
-    private val playlist: Playlist
+    private val playlist: Playlist,
+    private val session: YTMusicCarSession
 ) : Screen(carContext) {
 
     private val fetcher = app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher()
@@ -244,9 +313,50 @@ class PlaylistDetailScreen(
             }
         }
 
+        val actionStrip = androidx.car.app.model.ActionStrip.Builder()
+            .addAction(
+                Action.Builder()
+                    .setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, app.olus.ytmusic.autolauncher.R.drawable.ic_shuffle)).build())
+                    .setOnClickListener {
+                        session.currentlyPlayingUrl.value = playlist.url
+                        session.mediaSession.setPlaying(true)
+                        tracks?.let { list ->
+                            if (list.isNotEmpty()) {
+                                val track = list.random()
+                                val listId = fetcher.extractPlaylistId(playlist.url) ?: ""
+                                val trackUrl = "https://music.youtube.com/watch?v=${track.videoId}&list=$listId"
+                                openTrackUrl(trackUrl)
+                            } else {
+                                openTrackUrl(playlist.url)
+                            }
+                        } ?: run {
+                            openTrackUrl(playlist.url)
+                        }
+                    }
+                    .build()
+            )
+            .addAction(
+                Action.Builder()
+                    .setIcon(CarIcon.Builder(IconCompat.createWithResource(carContext, android.R.drawable.ic_media_next)).build())
+                    .setOnClickListener {
+                        session.currentlyPlayingUrl.value = playlist.url
+                        session.mediaSession.setPlaying(true)
+                        tracks?.drop(1)?.firstOrNull()?.let { track ->
+                            val listId = fetcher.extractPlaylistId(playlist.url) ?: ""
+                            val trackUrl = "https://music.youtube.com/watch?v=${track.videoId}&list=$listId"
+                            openTrackUrl(trackUrl)
+                        } ?: run {
+                            openTrackUrl(playlist.url)
+                        }
+                    }
+                    .build()
+            )
+            .build()
+            
         return androidx.car.app.model.ListTemplate.Builder()
             .setTitle(playlist.title)
             .setHeaderAction(Action.BACK)
+            .setActionStrip(actionStrip)
             .setSingleList(itemListBuilder.build())
             .build()
     }
