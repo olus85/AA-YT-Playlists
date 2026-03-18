@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YT Music Auto Launcher</string>
+    <string name="yt_playlists">YT Playlists</string>
+    <string name="playlist_count_plural">%d Playlisten</string>
+    <string name="playlist_count_singular">%d Playlist</string>
+    <string name="no_playlists">Keine Playlisten</string>
+    <string name="add_playlist_instruction">Tippe auf + um eine YouTube Music\nPlaylist hinzuzufügen</string>
+    <string name="fetching_metadata">Lade Metadaten...</string>
+    <string name="delete_playlist_title">Playlist löschen</string>
+    <string name="delete_confirmation_text">\"%s\" wirklich entfernen?</string>
+    <string name="delete">Löschen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="edit_playlist_title">Titel bearbeiten</string>
+    <string name="playlist_name_label">Playlist Name</string>
+    <string name="save">Speichern</string>
+    <string name="add_playlist_title">Playlist hinzufügen</string>
+    <string name="enter_url_label">YouTube Music URL</string>
+    <string name="add">Hinzufügen</string>
+    <string name="drag_to_reorder">Ziehen zum Sortieren</string>
+    <string name="edit">Bearbeiten</string>
+    <string name="error_fetch_failed">Metadaten konnten nicht geladen werden</string>
+    <string name="error_no_app">Keine App gefunden</string>
+</resources>
