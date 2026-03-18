@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-03-18
+
+### Added
+- **In-App Cover Search**: Search for album covers directly inside the app. Results are fetched concurrently from **iTunes/Apple Music** (albums + singles) and **Deezer** — all in 1000×1000px quality.
+
+### Changed
+- **Thumbnail Caching (Android Auto)**: Image cache is now keyed by URL instead of playlist ID, so cover changes are reflected instantly on the car screen.
+
+### Fixed
+- **Pause Button**: Pressing Pause in the playlist overview now actually pauses playback by dispatching a `KEYCODE_MEDIA_PAUSE` media key event.
+- **Drag & Drop Cover Reset**: Fixed a state capture bug where reordering playlists via drag & drop would reset custom covers to their previous values.
+- **Pull-to-Refresh Removed**: Removed the pull-down gesture that was silently overwriting user-set covers with YouTube's default thumbnails.
+
 ## [1.1.0] - 2026-03-18
 
 ### Added

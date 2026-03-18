@@ -84,7 +84,7 @@ class PlaylistGridScreen(
 ) : Screen(carContext) {
 
     private var playlists: List<Playlist> = emptyList()
-    private val playlistIcons = LruCache<Int, CarIcon>(50)
+    private val playlistIcons = LruCache<String, CarIcon>(50)
     private val imageLoader = ImageLoader(carContext)
     private var started = false
     private var playingUrl: String? = null
@@ -129,7 +129,7 @@ class PlaylistGridScreen(
 
     private fun loadIcons() {
         playlists.forEach { playlist ->
-            if (playlist.imageUrl.isNotEmpty() && playlistIcons.get(playlist.id) == null) {
+            if (playlist.imageUrl.isNotEmpty() && playlistIcons.get(playlist.imageUrl) == null) {
                 val request = ImageRequest.Builder(carContext)
                     .data(playlist.imageUrl)
                     .size(400, 400)
@@ -142,7 +142,7 @@ class PlaylistGridScreen(
                         try {
                             val bitmap = (result as? BitmapDrawable)?.bitmap
                             if (bitmap != null) {
-                                playlistIcons.put(playlist.id, CarIcon.Builder(
+                                playlistIcons.put(playlist.imageUrl, CarIcon.Builder(
                                     IconCompat.createWithBitmap(bitmap)
                                 ).build())
                                 invalidate()
@@ -165,7 +165,7 @@ class PlaylistGridScreen(
             itemListBuilder.setNoItemsMessage("Keine Playlisten. Füge welche am Handy hinzu.")
         } else {
             playlists.forEach { playlist ->
-                val carIcon = playlistIcons.get(playlist.id) ?: getDefaultCarIcon()
+                val carIcon = playlistIcons.get(playlist.imageUrl) ?: getDefaultCarIcon()
 
                 val subtitle = listOfNotNull(playlist.trackCount, playlist.duration)
                     .joinToString(" • ")

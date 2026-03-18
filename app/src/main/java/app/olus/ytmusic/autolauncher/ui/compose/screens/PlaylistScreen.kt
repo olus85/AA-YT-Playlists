@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +35,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -60,7 +65,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -98,8 +102,14 @@ import app.olus.ytmusic.autolauncher.R
 import app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed
 import app.olus.ytmusic.autolauncher.ui.compose.theme.YTRedSoft
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import org.json.JSONObject
+import org.jsoup.Jsoup
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
@@ -178,11 +188,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
             }
         }
     ) { paddingValues ->
-        val isRefreshing by viewModel.isRefreshing.collectAsState()
-
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = { viewModel.refreshAll() },
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -307,7 +313,11 @@ fun DraggablePlaylistList(
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
-    var displayList by remember(playlists) { mutableStateOf(playlists) }
+    var displayList by remember { mutableStateOf(playlists) }
+    
+    LaunchedEffect(playlists) {
+        displayList = playlists
+    }
 
     val state = rememberReorderableLazyListState(
         onMove = { from, to ->
@@ -581,18 +591,26 @@ fun EditPlaylistDialog(
                     )
                 )
 
-                val context = LocalContext.current
+                var showSearchDialog by remember { mutableStateOf(false) }
+                
                 TextButton(
-                    onClick = {
-                        val encodedQuery = Uri.encode(newTitle)
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?tbm=isch&q=$encodedQuery"))
-                        context.startActivity(intent)
-                    },
+                    onClick = { showSearchDialog = true },
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.search_cover_web), color = MaterialTheme.colorScheme.onSurface)
+                }
+
+                if (showSearchDialog) {
+                    SearchCoverDialog(
+                        initialQuery = newTitle,
+                        onImageSelected = { url -> 
+                            newImageUrl = url
+                            showSearchDialog = false 
+                        },
+                        onDismiss = { showSearchDialog = false }
+                    )
                 }
             }
         },
@@ -683,6 +701,175 @@ fun DeleteConfirmationDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Search Cover Dialog (In-App iTunes API)
+// ──────────────────────────────────────────────────────────────────────────────
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun SearchCoverDialog(
+    initialQuery: String,
+    onImageSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf(initialQuery) }
+    var results by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var hasSearched by remember { mutableStateOf(false) }
+
+    val scope = rememberCoroutineScope()
+
+    fun performSearch() {
+        if (query.isBlank()) return
+        isLoading = true
+        hasSearched = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val encodedQuery = android.net.Uri.encode(query)
+                
+                coroutineScope {
+                val itunesAlbumDef = async {
+                    val url = "https://itunes.apple.com/search?term=$encodedQuery&entity=album&limit=30"
+                    val jsonStr = Jsoup.connect(url).ignoreContentType(true).execute().body()
+                    val images = mutableListOf<String>()
+                    val resultsArray = JSONObject(jsonStr).optJSONArray("results")
+                    if (resultsArray != null) {
+                        for (i in 0 until resultsArray.length()) {
+                            val artwork = resultsArray.optJSONObject(i)?.optString("artworkUrl100")
+                            if (!artwork.isNullOrEmpty()) images.add(artwork.replace("100x100bb.jpg", "1000x1000bb.jpg"))
+                        }
+                    }
+                    images
+                }
+
+                val deezerDef = async {
+                    val url = "https://api.deezer.com/search/album?q=$encodedQuery&limit=30"
+                    val jsonStr = Jsoup.connect(url).ignoreContentType(true).execute().body()
+                    val images = mutableListOf<String>()
+                    val dataArray = JSONObject(jsonStr).optJSONArray("data")
+                    if (dataArray != null) {
+                        for (i in 0 until dataArray.length()) {
+                            val coverXl = dataArray.optJSONObject(i)?.optString("cover_xl")
+                            if (!coverXl.isNullOrEmpty()) images.add(coverXl)
+                        }
+                    }
+                    images
+                }
+
+                val itunesSongDef = async {
+                    val url = "https://itunes.apple.com/search?term=$encodedQuery&entity=song&limit=30"
+                    val jsonStr = Jsoup.connect(url).ignoreContentType(true).execute().body()
+                    val images = mutableListOf<String>()
+                    val resultsArray = JSONObject(jsonStr).optJSONArray("results")
+                    if (resultsArray != null) {
+                        for (i in 0 until resultsArray.length()) {
+                            val artwork = resultsArray.optJSONObject(i)?.optString("artworkUrl100")
+                            if (!artwork.isNullOrEmpty()) images.add(artwork.replace("100x100bb.jpg", "1000x1000bb.jpg"))
+                        }
+                    }
+                    images
+                }
+
+                val allImages = mutableListOf<String>()
+                try { allImages.addAll(itunesAlbumDef.await()) } catch (e: Exception) { }
+                try { allImages.addAll(deezerDef.await()) } catch (e: Exception) { }
+                try { allImages.addAll(itunesSongDef.await()) } catch (e: Exception) { }
+                
+                withContext(Dispatchers.Main) {
+                    results = allImages.distinct()
+                    isLoading = false
+                }
+                } // end coroutineScope
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isLoading = false
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (query.isNotBlank()) {
+            performSearch()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Cover suchen", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        },
+        text = {
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed,
+                            focusedLabelColor = app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed,
+                            cursorColor = app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed
+                        )
+                    )
+                    androidx.compose.material3.IconButton(onClick = { performSearch() }) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.material.icons.Icons.Default.Search, 
+                            contentDescription = "Suchen"
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator(color = app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed)
+                    }
+                } else if (hasSearched && results.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        Text("Keine Ergebnisse", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(results.size) { index ->
+                            val imageUrl = results[index]
+                            androidx.compose.material3.Card(
+                                modifier = Modifier
+                                    .aspectRatio(1f)
+                                    .clickable {
+                                        onImageSelected(imageUrl)
+                                    },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                AsyncImage(
+                                    model = imageUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(app.olus.ytmusic.autolauncher.R.string.cancel), color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
             }
         }
     )

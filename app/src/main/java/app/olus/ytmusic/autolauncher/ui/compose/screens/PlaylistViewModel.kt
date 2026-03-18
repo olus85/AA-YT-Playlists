@@ -51,30 +51,6 @@ class PlaylistViewModel @Inject constructor(
     private val _addPlaylistState = MutableStateFlow(AddPlaylistState())
     val addPlaylistState: StateFlow<AddPlaylistState> = _addPlaylistState
 
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing
-
-    fun refreshAll() {
-        if (_isRefreshing.value) return
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val currentList = playlists.value
-            currentList.map { playlist ->
-                async {
-                    val result = metadataFetcher.fetchMetadata(playlist.url)
-                    result.onSuccess { metadata ->
-                        repository.updatePlaylist(playlist.copy(
-                            trackCount = metadata.trackCount ?: playlist.trackCount,
-                            duration = metadata.duration ?: playlist.duration,
-                            imageUrl = if (metadata.imageUrl.isNotEmpty()) metadata.imageUrl else playlist.imageUrl
-                        ))
-                    }
-                }
-            }.awaitAll()
-            _isRefreshing.value = false
-        }
-    }
-
     fun updateUrl(url: String) {
         _addPlaylistState.value = _addPlaylistState.value.copy(url = url)
     }
