@@ -82,7 +82,7 @@ class PlaylistGridScreen(
         }
 
         return try {
-            buildGridTemplate()
+            buildListTemplate()
         } catch (e: Exception) {
             Log.e(TAG, "Error building template", e)
             buildErrorTemplate()
@@ -111,7 +111,7 @@ class PlaylistGridScreen(
                     .data(playlist.imageUrl)
                     .size(400, 400)
                     .precision(Precision.INEXACT)
-                    .scale(Scale.FIT)
+                    .scale(Scale.FILL)
                     .allowHardware(false)
                     .memoryCachePolicy(CachePolicy.ENABLED)
                     .diskCachePolicy(CachePolicy.ENABLED)
@@ -135,12 +135,10 @@ class PlaylistGridScreen(
     }
 
     @Suppress("DEPRECATION")
-    private fun buildGridTemplate(): Template {
+    private fun buildListTemplate(): Template {
         val itemListBuilder = ItemList.Builder()
 
-        if (repository == null) {
-            itemListBuilder.setNoItemsMessage("Fehler beim Laden der Datenbank. Bitte App neu starten.")
-        } else if (playlists.isEmpty()) {
+        if (playlists.isEmpty()) {
             itemListBuilder.setNoItemsMessage("Keine Playlisten. Füge welche am Handy hinzu.")
         } else {
             playlists.forEach { playlist ->
@@ -149,23 +147,23 @@ class PlaylistGridScreen(
                 val subtitle = listOfNotNull(playlist.trackCount, playlist.duration)
                     .joinToString(" • ")
 
-                val gridItemBuilder = GridItem.Builder()
+                val rowBuilder = androidx.car.app.model.Row.Builder()
                     .setTitle(playlist.title.ifEmpty { "Playlist" })
-                    .setImage(carIcon, GridItem.IMAGE_TYPE_LARGE)
+                    .setImage(carIcon, androidx.car.app.model.Row.IMAGE_TYPE_LARGE)
                     .setOnClickListener {
                         Log.d(TAG, "Clicked: ${playlist.title}")
-                        openPlaylistUrl(playlist.url)
+                        screenManager.push(PlaylistDetailScreen(carContext, playlist))
                     }
 
                 if (subtitle.isNotEmpty()) {
-                    gridItemBuilder.setText(subtitle)
+                    rowBuilder.addText(subtitle)
                 }
 
-                itemListBuilder.addItem(gridItemBuilder.build())
+                itemListBuilder.addItem(rowBuilder.build())
             }
         }
 
-        return GridTemplate.Builder()
+        return androidx.car.app.model.ListTemplate.Builder()
             .setTitle("YT Playlists")
             .setHeaderAction(Action.APP_ICON)
             .setSingleList(itemListBuilder.build())
@@ -174,7 +172,7 @@ class PlaylistGridScreen(
 
     @Suppress("DEPRECATION")
     private fun buildErrorTemplate(): Template {
-        return GridTemplate.Builder()
+        return androidx.car.app.model.ListTemplate.Builder()
             .setTitle("YT Playlists")
             .setHeaderAction(Action.APP_ICON)
             .setSingleList(
@@ -190,13 +188,70 @@ class PlaylistGridScreen(
             IconCompat.createWithResource(carContext, android.R.drawable.ic_menu_gallery)
         ).build()
     }
+}
 
-    private fun openPlaylistUrl(url: String) {
-        if (url.isBlank() || !url.startsWith("http")) {
-            CarToast.makeText(carContext, "Ungültige URL.", CarToast.LENGTH_LONG).show()
-            return
+class PlaylistDetailScreen(
+    carContext: CarContext,
+    private val playlist: Playlist
+) : Screen(carContext) {
+
+    private val fetcher = app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher()
+    private var tracks: List<app.olus.ytmusic.autolauncher.data.repository.Track>? = null
+    private var isError = false
+    private var isLoading = true
+
+    override fun onGetTemplate(): Template {
+        if (isLoading) {
+            lifecycleScope.launch {
+                val result = fetcher.fetchTracks(playlist.url)
+                result.fold(
+                    onSuccess = { 
+                        tracks = it
+                        isLoading = false
+                        invalidate()
+                    },
+                    onFailure = {
+                        isError = true
+                        isLoading = false
+                        invalidate()
+                    }
+                )
+            }
+            return androidx.car.app.model.ListTemplate.Builder()
+                .setTitle(playlist.title)
+                .setHeaderAction(Action.BACK)
+                .setLoading(true)
+                .build()
         }
 
+        val itemListBuilder = ItemList.Builder()
+
+        if (isError || tracks.isNullOrEmpty()) {
+            itemListBuilder.setNoItemsMessage("Fehler beim Laden der Tracks.")
+        } else {
+            tracks!!.forEach { track ->
+                itemListBuilder.addItem(
+                    androidx.car.app.model.Row.Builder()
+                        .setTitle(track.title)
+                        .addText(track.author)
+                        .setOnClickListener {
+                            val listId = fetcher.extractPlaylistId(playlist.url) ?: ""
+                            val trackUrl = "https://music.youtube.com/watch?v=${track.videoId}&list=$listId"
+                            openTrackUrl(trackUrl)
+                        }
+                        .build()
+                )
+            }
+        }
+
+        return androidx.car.app.model.ListTemplate.Builder()
+            .setTitle(playlist.title)
+            .setHeaderAction(Action.BACK)
+            .setSingleList(itemListBuilder.build())
+            .build()
+    }
+
+    private fun openTrackUrl(url: String) {
         try {
             val intent = Intent("app.olus.ytmusic.autolauncher.ACTION_OPEN_PLAYLIST").apply {
                 `package` = carContext.packageName
@@ -205,7 +260,6 @@ class PlaylistGridScreen(
             carContext.sendBroadcast(intent)
             CarToast.makeText(carContext, "Wird gestartet...", CarToast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to send broadcast", e)
             CarToast.makeText(carContext, "Fehler: ${e.message}", CarToast.LENGTH_LONG).show()
         }
     }

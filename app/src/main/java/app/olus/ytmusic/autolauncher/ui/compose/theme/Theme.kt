@@ -68,22 +68,22 @@ private val LightColorScheme = lightColorScheme(
 
 val AppTypography = Typography(
     headlineLarge = TextStyle(
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        letterSpacing = (-0.5).sp
+        fontWeight = FontWeight.Normal,
+        fontSize = 32.sp,
+        letterSpacing = 0.sp
     ),
     headlineMedium = TextStyle(
-        fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        letterSpacing = (-0.25).sp
+        fontWeight = FontWeight.Normal,
+        fontSize = 28.sp,
+        letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
-        fontWeight = FontWeight.Bold,
-        fontSize = 20.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp,
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         letterSpacing = 0.15.sp
     ),

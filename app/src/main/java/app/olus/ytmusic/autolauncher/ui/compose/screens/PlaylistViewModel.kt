@@ -120,9 +120,9 @@ class PlaylistViewModel @Inject constructor(
         }
     }
 
-    fun updatePlaylistTitle(playlist: Playlist, newTitle: String) {
+    fun updatePlaylistDetails(playlist: Playlist, newTitle: String, newImageUrl: String) {
         viewModelScope.launch {
-            repository.updatePlaylist(playlist.copy(title = newTitle))
+            repository.updatePlaylist(playlist.copy(title = newTitle, imageUrl = newImageUrl))
         }
     }
 

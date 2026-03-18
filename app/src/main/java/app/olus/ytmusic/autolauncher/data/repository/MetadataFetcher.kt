@@ -17,6 +17,12 @@ data class MetadataResult(
     val duration: String? = null
 )
 
+data class Track(
+    val title: String,
+    val author: String,
+    val videoId: String
+)
+
 class MetadataFetcher {
 
     // Invidious API instances for metadata fetching (no consent walls, no API key needed)
@@ -108,6 +114,52 @@ class MetadataFetcher {
             Result.failure(Exception("Keine Metadaten gefunden."))
         } catch (e: Exception) {
             Log.e(TAG, "Error in fetchMetadata", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchTracks(url: String): Result<List<Track>> = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Fetching tracks for: $url")
+            val playlistId = extractPlaylistId(url)
+            if (playlistId == null) {
+                return@withContext Result.failure(Exception("Ungültige URL"))
+            }
+
+            val instancesToTry = getActiveInstances()
+            for (instance in instancesToTry) {
+                try {
+                    val apiUrl = "$instance/api/v1/playlists/$playlistId"
+                    val response = Jsoup.connect(apiUrl)
+                        .ignoreContentType(true)
+                        .userAgent("Mozilla/5.0")
+                        .timeout(10000)
+                        .execute()
+                    val json = JSONObject(response.body())
+                    val videosArray = json.optJSONArray("videos")
+                    if (videosArray != null && videosArray.length() > 0) {
+                        val tracks = mutableListOf<Track>()
+                        for (i in 0 until videosArray.length()) {
+                            val v = videosArray.optJSONObject(i)
+                            if (v != null) {
+                                val title = v.optString("title", "")
+                                val author = v.optString("author", "")
+                                val videoId = v.optString("videoId", "")
+                                if (title.isNotEmpty() && videoId.isNotEmpty()) {
+                                    tracks.add(Track(title, author, videoId))
+                                }
+                            }
+                        }
+                        if (tracks.isNotEmpty()) {
+                            return@withContext Result.success(tracks)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Invidious instance $instance failed: ${e.message}")
+                }
+            }
+            Result.failure(Exception("Keine Tracks gefunden."))
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }

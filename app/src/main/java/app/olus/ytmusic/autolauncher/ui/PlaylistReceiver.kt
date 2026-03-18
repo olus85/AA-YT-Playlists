@@ -33,8 +33,11 @@ class PlaylistReceiver : BroadcastReceiver() {
         try {
             val uri = Uri.parse(url)
             val listId = uri.getQueryParameter("list")
+            val videoId = uri.getQueryParameter("v")
             
-            if (listId != null) {
+            if (videoId != null && listId != null) {
+                return "https://music.youtube.com/watch?v=$videoId&list=$listId&shuffle=0"
+            } else if (listId != null) {
                 // Build a proper playback URL with the list ID
                 return "https://music.youtube.com/watch?list=$listId&shuffle=0"
             }

@@ -62,6 +62,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
     debugImplementation(libs.androidx.ui.tooling)
 
     // Room Database

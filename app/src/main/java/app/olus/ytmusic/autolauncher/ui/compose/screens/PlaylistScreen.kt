@@ -9,7 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -97,6 +97,10 @@ import app.olus.ytmusic.autolauncher.ui.compose.theme.YTRedSoft
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import org.burnoutcrew.reorderable.ReorderableItem
+import org.burnoutcrew.reorderable.detectReorder
+import org.burnoutcrew.reorderable.rememberReorderableLazyListState
+import org.burnoutcrew.reorderable.reorderable
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main Screen
@@ -188,7 +192,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                     paddingValues = PaddingValues(0.dp),
                     onSaveOrder = { viewModel.savePlaylistOrder(it) },
                     onDelete = { showDeleteDialog = it },
-                    onEditTitle = { showEditDialog = it },
+                    onEditPlaylist = { showEditDialog = it },
                     onRefreshMetadata = { viewModel.refreshPlaylistMetadata(it) }
                 )
             }
@@ -222,10 +226,10 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     }
 
     showEditDialog?.let { playlist ->
-        EditTitleDialog(
-            currentTitle = playlist.title,
-            onConfirm = { newTitle ->
-                viewModel.updatePlaylistTitle(playlist, newTitle)
+        EditPlaylistDialog(
+            playlist = playlist,
+            onConfirm = { newTitle, newImageUrl ->
+                viewModel.updatePlaylistDetails(playlist, newTitle, newImageUrl)
                 showEditDialog = null
             },
             onDismiss = { showEditDialog = null }
@@ -294,79 +298,32 @@ fun DraggablePlaylistList(
     paddingValues: PaddingValues,
     onSaveOrder: (List<Playlist>) -> Unit,
     onDelete: (Playlist) -> Unit,
-    onEditTitle: (Playlist) -> Unit,
+    onEditPlaylist: (Playlist) -> Unit,
     onRefreshMetadata: (Playlist) -> Unit
 ) {
-    val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
-    // Drag state
     var displayList by remember(playlists) { mutableStateOf(playlists) }
-    var draggedItemIndex by remember { mutableIntStateOf(-1) }
+
+    val state = rememberReorderableLazyListState(
+        onMove = { from, to ->
+            displayList = displayList.toMutableList().apply {
+                add(to.index, removeAt(from.index))
+            }
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        },
+        onDragEnd = { startIndex, endIndex ->
+            onSaveOrder(displayList)
+        }
+    )
 
     LazyColumn(
-        state = listState,
+        state = state.listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .pointerInput(displayList) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        val item = listState.layoutInfo.visibleItemsInfo
-                            .firstOrNull { info ->
-                                offset.y.toInt() in info.offset..(info.offset + info.size)
-                            }
-                        if (item != null) {
-                            draggedItemIndex = item.index
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        if (draggedItemIndex >= 0) {
-                            val currentY = change.position.y
-                            val targetItem = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { info ->
-                                    currentY.toInt() in info.offset..(info.offset + info.size)
-                                }
-
-                            if (targetItem != null && targetItem.index != draggedItemIndex) {
-                                val list = displayList.toMutableList()
-                                val item = list.removeAt(draggedItemIndex)
-                                list.add(targetItem.index, item)
-                                displayList = list
-                                draggedItemIndex = targetItem.index
-                            }
-
-                            // Auto-scroll near edges
-                            val layoutInfo = listState.layoutInfo
-                            val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-                            val scrollThreshold = viewportHeight * 0.15f
-                            val itemCenter = currentY.toInt()
-
-                            scope.launch {
-                                when {
-                                    itemCenter < layoutInfo.viewportStartOffset + scrollThreshold -> {
-                                        listState.scrollToItem(maxOf(0, listState.firstVisibleItemIndex - 1))
-                                    }
-                                    itemCenter > layoutInfo.viewportEndOffset - scrollThreshold -> {
-                                        listState.scrollToItem(minOf(displayList.size - 1, listState.firstVisibleItemIndex + 1))
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        draggedItemIndex = -1
-                        onSaveOrder(displayList)
-                    },
-                    onDragCancel = {
-                        draggedItemIndex = -1
-                        displayList = playlists
-                    }
-                )
-            },
+            .reorderable(state),
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
@@ -379,41 +336,40 @@ fun DraggablePlaylistList(
             items = displayList,
             key = { _, playlist -> playlist.id }
         ) { index, playlist ->
-            val isBeingDragged = index == draggedItemIndex
-
-            val elevation by animateDpAsState(
-                targetValue = if (isBeingDragged) 16.dp else 0.dp,
-                animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                label = "elevation"
-            )
-            val scale by animateFloatAsState(
-                targetValue = if (isBeingDragged) 1.03f else 1f,
-                animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                label = "scale"
-            )
-
-            // Staggered entrance animation
-            var visible by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(index * 50L)
-                visible = true
-            }
-
-            AnimatedVisibility(
-                visible = visible,
-                enter = fadeIn() + slideInVertically { it / 3 }
-            ) {
-                PlaylistItem(
-                    playlist = playlist,
-                    onDelete = { onDelete(playlist) },
-                    onEditTitle = { onEditTitle(playlist) },
-                    isDragging = isBeingDragged,
-                    modifier = Modifier
-                        .animateItem()
-                        .zIndex(if (isBeingDragged) 1f else 0f)
-                        .scale(scale)
-                        .shadow(elevation, RoundedCornerShape(16.dp))
+            ReorderableItem(state, key = playlist.id) { isDragging ->
+                val elevation by animateDpAsState(
+                    targetValue = if (isDragging) 16.dp else 0.dp,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "elevation"
                 )
+                val scale by animateFloatAsState(
+                    targetValue = if (isDragging) 1.03f else 1f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "scale"
+                )
+
+                // Staggered entrance animation
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(index * 50L)
+                    visible = true
+                }
+
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn() + slideInVertically { it / 3 }
+                ) {
+                    PlaylistItem(
+                        playlist = playlist,
+                        onDelete = { onDelete(playlist) },
+                        onEditTitle = { onEditPlaylist(playlist) },
+                        isDragging = isDragging,
+                        dragModifier = Modifier.detectReorder(state),
+                        modifier = Modifier
+                            .scale(scale)
+                            .shadow(elevation, RoundedCornerShape(16.dp))
+                    )
+                }
             }
         }
     }
@@ -429,6 +385,7 @@ fun PlaylistItem(
     onDelete: () -> Unit,
     onEditTitle: () -> Unit,
     isDragging: Boolean = false,
+    dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -454,8 +411,9 @@ fun PlaylistItem(
             Icon(
                 imageVector = Icons.Default.DragHandle,
                 contentDescription = stringResource(R.string.drag_to_reorder),
-                modifier = Modifier
-                    .size(24.dp)
+                modifier = dragModifier
+                    .size(36.dp)
+                    .padding(6.dp)
                     .alpha(0.4f),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -579,12 +537,13 @@ fun PlaylistItem(
 // ──────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun EditTitleDialog(
-    currentTitle: String,
-    onConfirm: (String) -> Unit,
+fun EditPlaylistDialog(
+    playlist: Playlist,
+    onConfirm: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var newTitle by remember { mutableStateOf(currentTitle) }
+    var newTitle by remember { mutableStateOf(playlist.title) }
+    var newImageUrl by remember { mutableStateOf(playlist.imageUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -593,21 +552,35 @@ fun EditTitleDialog(
             Text(stringResource(R.string.edit_playlist_title), fontWeight = FontWeight.Bold)
         },
         text = {
-            OutlinedTextField(
-                value = newTitle,
-                onValueChange = { newTitle = it },
-                label = { Text(stringResource(R.string.playlist_name_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = YTRed,
-                    focusedLabelColor = YTRed,
-                    cursorColor = YTRed
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = newTitle,
+                    onValueChange = { newTitle = it },
+                    label = { Text(stringResource(R.string.playlist_name_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = YTRed,
+                        focusedLabelColor = YTRed,
+                        cursorColor = YTRed
+                    )
                 )
-            )
+                OutlinedTextField(
+                    value = newImageUrl,
+                    onValueChange = { newImageUrl = it },
+                    label = { Text("Bild-URL") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = YTRed,
+                        focusedLabelColor = YTRed,
+                        cursorColor = YTRed
+                    )
+                )
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(newTitle) }) {
+            TextButton(onClick = { onConfirm(newTitle, newImageUrl) }) {
                 Text(stringResource(R.string.save), color = YTRed, fontWeight = FontWeight.Bold)
             }
         },
