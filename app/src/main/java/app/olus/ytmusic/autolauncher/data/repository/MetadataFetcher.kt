@@ -36,6 +36,13 @@ class MetadataFetcher {
     private var dynamicInstances: List<String> = emptyList()
     private var lastFetchTime = 0L
 
+    // In-memory cache for tracks
+    private val trackCache = android.util.LruCache<String, List<Track>>(20)
+
+    suspend fun prefetchInstances() {
+        getActiveInstances()
+    }
+
     private suspend fun getActiveInstances(): List<String> {
         if (dynamicInstances.isNotEmpty() && System.currentTimeMillis() - lastFetchTime < 3600000) {
             return dynamicInstances
@@ -126,6 +133,12 @@ class MetadataFetcher {
                 return@withContext Result.failure(Exception("Ungültige URL"))
             }
 
+            val cached = trackCache.get(playlistId)
+            if (cached != null) {
+                Log.d(TAG, "Returning cached tracks for: $playlistId")
+                return@withContext Result.success(cached)
+            }
+
             val instancesToTry = getActiveInstances()
             for (instance in instancesToTry) {
                 try {
@@ -151,6 +164,7 @@ class MetadataFetcher {
                             }
                         }
                         if (tracks.isNotEmpty()) {
+                            trackCache.put(playlistId, tracks)
                             return@withContext Result.success(tracks)
                         }
                     }

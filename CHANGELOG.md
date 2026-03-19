@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-03-19
+
+### Fixed
+- **Restored CarAppService UI**: Reverted the rigid native media tabs in favor of the flexible, thumbnail-rich list interface for better UX and direct song control.
+- **Head Unit Visibility**: Successfully registered the app as a `POI` category, ensuring it appears on physical Android Auto head units.
+- **Background Activity Fix**: Moved playback intent logic into the main service to bypass Android 14 background launch restrictions.
+- **Metadata Feedback**: Added dummy metadata to the media session during track launch to prevent Android Auto from hanging on "Fetching selection".
+- **Loading Performance**: Implemented in-memory caching and pre-fetching of Invidious API instances to drastically reduce playlist and track load times.
+
+
 ## [1.3.0] - 2026-03-19
 
 ### Added

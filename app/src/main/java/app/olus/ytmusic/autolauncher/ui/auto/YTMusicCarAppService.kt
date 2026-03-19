@@ -88,6 +88,7 @@ class PlaylistGridScreen(
     private val imageLoader = ImageLoader(carContext)
     private var started = false
     private var playingUrl: String? = null
+    private val fetcher = app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher()
 
     override fun onGetTemplate(): Template {
         Log.d(TAG, "onGetTemplate: ${playlists.size} items, started=$started")
@@ -107,6 +108,13 @@ class PlaylistGridScreen(
     }
 
     private fun startObservingPlaylists() {
+        lifecycleScope.launch {
+            try {
+                fetcher.prefetchInstances()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error prefetching instances", e)
+            }
+        }
         lifecycleScope.launch {
             try {
                 repository.getAllPlaylists().collect { updatedList ->
