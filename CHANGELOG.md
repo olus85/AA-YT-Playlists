@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-03-19
+
+### Added
+- **MediaBrowserServiceCompat Support**: Implemented a legacy Media Browser Service to ensure the app appears on physical Android Auto headunits (bypassing strict Car App Library Play Store verification).
+- **Native Media UI**: Playlists and tracks are now browsable and playable directly through Android Auto's native media center interface.
+
+### Changed
+- **CarAppService Category**: Changed `CarAppService` category from `AUDIO` to `POI` to prevent conflicts with the new Media Browser Service on real hardware.
+- **Automotive Descriptor**: Updated `automotive_app_desc.xml` to include the `media` usage tag.
+
 ## [1.2.0] - 2026-03-18
 
 ### Added

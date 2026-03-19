@@ -4,6 +4,7 @@ AA YT Playlists is an Android Auto application that allows users to manage and p
 
 ## Features
 
+- **Media Browser Service Integration**: Replaces/Augments the Car App Library with `MediaBrowserServiceCompat`, ensuring the app is visible on all physical headunits as a native media source.
 - **Direct Car App Rendering**: Built using the Car App Library, providing native layouts and smooth performance directly on the vehicle's infotainment screen.
 - **YouTube App Integration**: Launches specific YouTube playlists locally via Intents or integrates with `app.rvx.android.apps.youtube.music` directly from Android Auto.
 - **Background Metadata Fetching**: Pulls playlist details (thumbnails, track counts, duration) dynamically.

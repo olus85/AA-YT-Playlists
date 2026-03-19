@@ -40,13 +40,22 @@
             </intent-filter>
         </activity>
 
-        <!-- Android Auto Car App Service -->
+        <!-- Android Auto Car App Service (Fallback/Legacy) -->
         <service
             android:name=".ui.auto.YTMusicCarAppService"
             android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
-                <category android:name="androidx.car.app.category.AUDIO" />
+                <category android:name="androidx.car.app.category.POI" />
+            </intent-filter>
+        </service>
+
+        <!-- Android Auto Classic Media Service -->
+        <service
+            android:name=".ui.auto.YTMusicMediaBrowserService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
 
