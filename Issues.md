@@ -1,144 +1,159 @@
-*"Bitte arbeite die folgenden Issues der Reihe nach ab. Jedes Issue enthält den Kontext, die betroffenen Dateien und die Akzeptanzkriterien (Definition of Done). Führe für jedes Issue die Code-Änderungen durch und prüfe, ob die App kompiliert, bevor du zum nächsten übergehst."*
+### Neue Issues
 
----
+```markdown
+## 🚨 KATEGORIE G: Headunit-Sichtbarkeit & Diagnostik
 
-## 🔴 KATEGORIE A: Kritische Blocker & Stabilität
-
-### Issue A1: Package Visibility (Android 11+) für Intents fehlt
-**Kontext:** Die App hat `targetSdk = 35`. Der `PlaylistReceiver` versucht per explizitem Intent andere Apps (`app.rvx.android.apps.youtube.music`, etc.) zu starten. Ab Android 11 schlagen diese Intents fehl (Package visibility filtering), da das System der App verbietet zu sehen, ob diese Packages installiert sind.
+### Issue G1: Zuverlässige Headunit-Sichtbarkeit (MediaBrowserService "Trojaner")
+**Kontext:** Die App wird auf echten Android Auto Headunits nicht im Launcher angezeigt, obwohl "Unbekannte Quellen" aktiv sind. Sideload-Apps, die rein auf dem `CarAppService` basieren (Kategorie POI/IOT), werden von Google oft serverseitig oder vom Headunit geblockt. Sideload-Apps, die als klassische Medien-App (`MediaBrowserServiceCompat`) deklariert sind, kommen meistens durch. Der Eintrag dafür fehlt aktuell im Android Manifest.
 **Betroffene Dateien:**
 - `app/src/main/AndroidManifest.xml`
+- `app/src/main/java/app/olus/ytmusic/autolauncher/service/DummyMediaBrowserService.kt` (Neu)
 **Akzeptanzkriterien (DoD):**
-- [ ] Ein `<queries>` Block ist im Manifest (außerhalb des `<application>` Tags) hinzugefügt.
-- [ ] Alle im `PlaylistReceiver` aufgerufenen YouTube Music Package-Namen sind im `<queries>` Block als `<package android:name="..." />` deklariert.
+- [ ] Ein `DummyMediaBrowserService` (erbt von `MediaBrowserServiceCompat`) ist implementiert, der eine gültige `BrowserRoot` zurückgibt.
+- [ ] Der Service ist im Manifest mit der Action `android.media.browse.MediaBrowserService` registriert.
+- [ ] Die App taucht nach der Installation nun zuverlässig auf dem Headunit auf (Android Auto erkennt sie als legitime Medienquelle).
 
-### Issue A2: Schweres Memory Leak im Car App Service
-**Kontext:** In `PlaylistGridScreen` wird ein eigener CoroutineScope (`CoroutineScope(SupervisorJob() + Dispatchers.Main)`) erstellt. Dieser Scope wird nirgendwo gecancelt. Da Screens in Android Auto neu gerendert werden können, entstehen hier Memory Leaks.
+### Issue G2: In-App Android Auto Diagnostics & Log-Viewer
+**Kontext:** Das Debuggen der App erfordert ständige Gänge zum Auto. Wir benötigen einen systemweiten Debug-Modus, der alle Verbindungsversuche vom Auto zur App, Fehler beim Laden der Templates und spezifische Headunit-Infos (Host-Version, API-Level) lokal speichert.
 **Betroffene Dateien:**
+- `app/src/main/java/app/olus/ytmusic/autolauncher/util/AALogger.kt` (Neu)
+- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/SettingsScreen.kt` (Neu - oder im PlaylistScreen integriert)
 - `app/src/main/java/app/olus/ytmusic/autolauncher/ui/auto/YTMusicCarAppService.kt`
 **Akzeptanzkriterien (DoD):**
-- [ ] Der manuelle `CoroutineScope` wurde entfernt.
-- [ ] Stattdessen wird die Coroutine über einen passenden, an den Lifecycle gebundenen Scope gestartet (z.B. indem `Screen` das `lifecycleScope` nutzt oder die Subscription sauber in `onStart`/`onStop` verwaltet wird).
-
-### Issue A3: Out of Memory (OOM) Gefahr durch unbereinigten Bitmap-Cache
-**Kontext:** In `PlaylistGridScreen` werden Bitmaps via Coil geladen und in einer unbegrenzten `MutableMap<Int, CarIcon>` (`playlistIcons`) zwischengespeichert. Dies hält Bitmaps dauerhaft im RAM und crasht die App bei vielen Playlisten.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/auto/YTMusicCarAppService.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Die `MutableMap` für `CarIcon`s wird auf eine feste Größe limitiert (z.B. LruCache) ODER Coil's natives Caching wird genutzt, ohne die Bitmaps manuell hart im Screen zu referenzieren.
-
-### Issue A4: Aggressiver Datenverlust bei Service-Start
-**Kontext:** In `YTMusicCarAppService.onCreate()` wird bei jeglicher Exception beim Initialisieren der Datenbank aggressiv `applicationContext.deleteDatabase(...)` aufgerufen. Das löscht alle User-Daten bei temporären Fehlern.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/auto/YTMusicCarAppService.kt`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/data/local/PlaylistDatabase.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Das harte Löschen der Datenbank im `try-catch`-Block in `YTMusicCarAppService` ist entfernt.
-- [ ] Wenn die DB nicht geladen werden kann, wird ein Graceful-Degradation-Status (Fehlermeldung) gesetzt.
-
-### Issue A5: Sicherheitslücke im PlaylistReceiver
-**Kontext:** Der `PlaylistReceiver` ist mit `android:exported="true"` deklariert. Da er Intents mit einer bestimmten Action verarbeitet und sofort URLs öffnet, kann jede andere (bösartige) App auf dem Gerät diesen Receiver triggern.
-**Betroffene Dateien:**
-- `app/src/main/AndroidManifest.xml`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/auto/YTMusicCarAppService.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Im Manifest wird der `PlaylistReceiver` auf `android:exported="false"` gesetzt (da der Intent nur von der eigenen Car App Service / App kommt).
-- [ ] Im `CarAppService` wird beim Senden des Broadcasts explizit das eigene Package per `setPackage()` im Intent spezifiziert.
+- [ ] Ein globaler Logger (`AALogger`) schreibt Logs in eine lokale Datei (z.B. im Cache-Verzeichnis) oder eine Room-Tabelle.
+- [ ] Im `YTMusicCarAppService` werden essenzielle Lifecycle-Events geloggt: `onCreateSession`, Headunit-Paketname (`carContext.hostInfo?.packageName`), API-Level und Abstürze beim Template-Bauen.
+- [ ] Es gibt einen UI-Schalter auf dem Smartphone (z.B. in einem neuen Settings-Dialog), der den Debug-Modus aktiviert.
+- [ ] Die gesammelten Logs können direkt in der Smartphone-App ausgelesen und per Share-Intent (Teilen) exportiert werden.
+```
 
 ---
 
-## 🟡 KATEGORIE B: UI/UX & Design
+### Umsetzung von Issue G1 (Headunit-Sichtbarkeit Fix)
 
-### Issue B1: UI-Blockierung bei Metadaten-Download beheben
-**Kontext:** Im `AddPlaylistDialog` blockiert der Scraping-Vorgang die UI. Wenn es lange dauert, muss der User auf den Spinner warten.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistScreen.kt`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistViewModel.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Die URL wird beim Hinzufügen sofort als Playlist (mit Platzhalter/Skeleton-UI) in die Datenbank/Liste aufgenommen.
-- [ ] Das Fetching der Metadaten läuft asynchron als Hintergrund-Task.
-- [ ] Sobald die Metadaten geladen sind, aktualisiert sich das Listen-Item (Recomposition).
+Um dir den erneuten Gang zum Auto direkt erfolgreicher zu machen, setzen wir **Issue G1** sofort um. Wir fügen den fehlenden Media-Service hinzu. Dieser fungiert als "Türöffner" für Android Auto.
 
-### Issue B2: Manuelles Neuladen via Pull-to-Refresh hinzufügen
-**Kontext:** Es gibt keine Möglichkeit für den User, die Dauer oder Songanzahl einer existierenden Playlist manuell zu aktualisieren.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistScreen.kt`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistViewModel.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Ein `pullRefresh` Modifier (Material 3) ist der `LazyColumn` im `PlaylistScreen` hinzugefügt.
-- [ ] Eine `refreshAll()` Funktion im ViewModel triggert den Metadaten-Download für alle Playlisten und zeigt den Ladeindikator.
+**Geänderte/Neue Dateien:**
+- `app/src/main/java/app/olus/ytmusic/autolauncher/service/DummyMediaBrowserService.kt` (NEU)
+- `app/src/main/AndroidManifest.xml` (GEÄNDERT)
 
-### Issue B3: Native Drag & Drop Animation implementieren
-**Kontext:** Das Sortieren der Playlisten nutzt manuelles `pointerInput` und statisches `offset`. Das führt zu Rucklern und ist nicht state-of-the-art in Compose.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistScreen.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Im `itemsIndexed` Block der `LazyColumn` wird der `Modifier.animateItem()` genutzt.
-- [ ] Drag-Gesten verwenden nach Möglichkeit eine etablierte Library (z.B. `shreyaspatil/compose-reorderable`) oder einen sauberen State-Driven Ansatz ohne manuelles Offset-Hacking.
+Hier sind die vollständigen, direkt einsetzbaben Dateien:
 
-### Issue B4: Hardcodierte UI-Strings auslagern
-**Kontext:** In der Compose-UI sind Strings wie "YT Playlists", "Lade Metadaten...", "Speichern" hardcodiert, obwohl eine `strings.xml` existiert.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/screens/PlaylistScreen.kt`
-- `app/src/main/res/values/strings.xml`
-**Akzeptanzkriterien (DoD):**
-- [ ] Alle sichtbaren UI-Texte in `PlaylistScreen.kt` sind durch `stringResource(id = R.string.xxx)` ersetzt.
-- [ ] Alle fehlenden Strings sind in der `strings.xml` deklariert.
+#### 1. NEUE DATEI: `app/src/main/java/app/olus/ytmusic/autolauncher/service/DummyMediaBrowserService.kt`
+*Lege diese Datei im entsprechenden Pfad an. Sie macht nichts weiter, als Android Auto vorzugaukeln, dass wir eine legale Audio-App sind, damit das Icon im Launcher freigeschaltet wird.*
 
-### Issue B5: System-Theme (Dark/Light Mode) respektieren
-**Kontext:** Die Funktion `YTMusicAutoLauncherTheme` forciert `darkTheme = true` als Default-Parameter. Das führt zu Kontrastproblemen in der Statusleiste, wenn das Android-System auf Light-Mode steht.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/compose/theme/Theme.kt`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/MainActivity.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] `YTMusicAutoLauncherTheme` evaluiert `isSystemInDarkTheme()` statt pauschal `true` als Default zu nehmen.
-- [ ] Edge-to-Edge System-Bars passen ihre Icons (hell/dunkel) dynamisch an den System-State an.
+```kotlin
+package app.olus.ytmusic.autolauncher.service
 
----
+import android.os.Bundle
+import android.support.v4.media.MediaBrowserCompat
+import androidx.media.MediaBrowserServiceCompat
 
-## 🟢 KATEGORIE C: Architektur & Allgemeine Verbesserungen
+/**
+ * Ein Dummy-Service, der zwingend notwendig ist, damit Sideload-Apps
+ * auf physischen Android Auto Headunits im Launcher angezeigt werden.
+ * Android Auto sucht nach Apps mit dem Intent 'android.media.browse.MediaBrowserService'.
+ * Die eigentliche UI wird weiterhin über den CarAppService gesteuert.
+ */
+class DummyMediaBrowserService : MediaBrowserServiceCompat() {
 
-### Issue C1: Hilt für Dependency Injection einführen
-**Kontext:** Abhängigkeiten wie Database, Repository und Fetcher werden im `YTAutoLauncherApp.kt` manuell initialisiert (`lazy`) und ViewModel Factories von Hand gebaut.
-**Betroffene Dateien:**
-- `app/build.gradle.kts`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/YTAutoLauncherApp.kt`
-- Alle ViewModels und Activities
-**Akzeptanzkriterien (DoD):**
-- [ ] Dagger Hilt Gradle Plugins & Dependencies (aktuellste verifizierte Version) sind konfiguriert.
-- [ ] `YTAutoLauncherApp` nutzt `@HiltAndroidApp`.
-- [ ] `PlaylistViewModel` wird via `@HiltViewModel` und `@Inject` bereitgestellt.
+    override fun onGetRoot(
+        clientPackageName: String,
+        clientUid: Int,
+        rootHints: Bundle?
+    ): BrowserRoot {
+        // Wir erlauben die Verbindung und geben eine Dummy-Root ID zurück.
+        // Das signalisiert Android Auto: "Ja, ich bin eine Media App".
+        return BrowserRoot("yt_auto_launcher_root_id", null)
+    }
 
-### Issue C2: Room FallbackToDestructiveMigration entfernen
-**Kontext:** Die App nutzt `.fallbackToDestructiveMigration()` in Room. Bei einer Änderung des Datenbankschemas durch ein App-Update verlieren die Nutzer alle Playlisten.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/data/local/PlaylistDatabase.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] `.fallbackToDestructiveMigration()` wird entfernt.
-- [ ] (Optional/Vorbereitend) Eine leere Migration (`MIGRATION_3_4`) wird angelegt, um das korrekte Pattern für die Zukunft zu definieren.
+    override fun onLoadChildren(
+        parentId: String,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>
+    ) {
+        // Wir senden eine leere Liste zurück, da wir die native MediaBrowser-UI
+        // nicht nutzen wollen, sondern unseren Jetpack CarAppService.
+        result.sendResult(mutableListOf())
+    }
+}
+```
 
-### Issue C3: Dynamische Remote Config für Scraping-URLs
-**Kontext:** Im `MetadataFetcher` sind Invidious-URLs hardcodiert. Wenn diese Server offline gehen, geht das Scraping kaputt.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/data/repository/MetadataFetcher.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Die Liste `invidiousInstances` ist nicht mehr hartkodiert.
-- [ ] Die App fetcht beim Start (oder per Background Worker) eine JSON-Liste mit aktuellen Invidious-URLs (z.B. von einem GitHub Gist oder einer Invidious API) und speichert diese als Fallback.
+#### 2. GEÄNDERTE DATEI: `app/src/main/AndroidManifest.xml`
+*Ich habe den neuen `DummyMediaBrowserService` hinzugefügt und den `CarAppService` zusätzlich mit der `AUDIO` Kategorie versehen, um auf Nummer sicher zu gehen.*
 
-### Issue C4: Robustes URL-Parsing
-**Kontext:** Die Methode `extractUrl` in der MainActivity nutzt einen simplen Regex. Die URL `https://youtu.be/...` oder Share-Texte aus der App werden teilweise nicht korrekt zu Playlisten aufgelöst.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/MainActivity.kt`
-- `app/src/main/java/app/olus/ytmusic/autolauncher/data/repository/MetadataFetcher.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Die URL-Extraktion nutzt robuste `java.net.URI` und `android.net.Uri` Mechanismen.
-- [ ] Die Parameter `v=` (Video) und `list=` (Playlist) werden sauber getrennt behandelt.
-- [ ] Unit-Tests für `extractUrl` decken die 5 häufigsten YouTube-Share-Formate ab.
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-### Issue C5: Car App Offline Image Caching aktivieren
-**Kontext:** Die `ImageRequest` Aufrufe in der Car App haben keine explizite Cache-Policy. Fährt das Auto in eine Offline-Zone (Garage), fehlen die Icons im Autoradio.
-**Betroffene Dateien:**
-- `app/src/main/java/app/olus/ytmusic/autolauncher/ui/auto/YTMusicCarAppService.kt`
-**Akzeptanzkriterien (DoD):**
-- [ ] Das Coil `ImageRequest` Builder-Pattern in `loadIcons()` wird erweitert, um `.memoryCachePolicy` und `.diskCachePolicy` auf `CachePolicy.ENABLED` zu setzen.
-- [ ] Das Timeout für das Netzwerk-Laden in der CarApp wird verkürzt, um im Offline-Fall schneller das Cache-Bild (oder das Fallback-Icon) anzuzeigen.
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <package android:name="app.rvx.android.apps.youtube.music" />
+        <package android:name="app.revanced.android.apps.youtube.music" />
+        <package android:name="com.google.android.apps.youtube.music" />
+    </queries>
+
+    <application
+        android:name=".YTMusicAutoLauncherApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.YTAutoLauncher"
+        tools:targetApi="34">
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.YTAutoLauncher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ui.auto.YTMusicCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.POI" />
+                <category android:name="androidx.car.app.category.AUDIO" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.DummyMediaBrowserService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
+        <receiver
+            android:name=".ui.PlaylistReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.olus.ytmusic.autolauncher.ACTION_OPEN_PLAYLIST" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
+```
+

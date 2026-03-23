@@ -20,6 +20,7 @@ import androidx.core.graphics.drawable.IconCompat
 import app.olus.ytmusic.autolauncher.data.local.PlaylistDatabase
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
 import app.olus.ytmusic.autolauncher.domain.model.Playlist
+import app.olus.ytmusic.autolauncher.util.AALogger
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.CachePolicy
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -46,16 +48,16 @@ class YTMusicCarAppService : CarAppService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Service onCreate")
+        AALogger.forceLog(TAG, "Service onCreate")
     }
 
     override fun createHostValidator(): HostValidator {
-        Log.d(TAG, "createHostValidator")
+        AALogger.forceLog(TAG, "createHostValidator called")
         return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
     }
 
     override fun onCreateSession(): Session {
-        Log.d(TAG, "onCreateSession")
+        AALogger.forceLog(TAG, "onCreateSession – creating new YTMusicCarSession")
         return YTMusicCarSession(repository)
     }
 }
@@ -65,10 +67,18 @@ class YTMusicCarSession(private val repository: PlaylistRepository) : Session() 
     val currentlyPlayingUrl = MutableStateFlow<String?>(null)
 
     override fun onCreateScreen(intent: Intent): Screen {
-        Log.d(TAG, "onCreateScreen")
+        // Log host info for diagnostics
+        try {
+            val hostInfo = carContext.hostInfo
+            AALogger.forceLog(TAG, "onCreateScreen – Host: ${hostInfo?.packageName ?: "unknown"}")
+            AALogger.forceLog(TAG, "Car API Level: ${carContext.carAppApiLevel}")
+        } catch (e: Exception) {
+            AALogger.logError(TAG, "Error reading host info", e)
+        }
         
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onDestroy(owner: LifecycleOwner) {
+                AALogger.forceLog(TAG, "Session onDestroy")
                 mediaSession.release()
             }
         })
@@ -91,18 +101,19 @@ class PlaylistGridScreen(
     private val fetcher = app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher()
 
     override fun onGetTemplate(): Template {
-        Log.d(TAG, "onGetTemplate: ${playlists.size} items, started=$started")
+        AALogger.log(TAG, "onGetTemplate: ${playlists.size} items, started=$started")
 
         // Start observing on first template request (lifecycle is guaranteed active here)
         if (!started) {
             started = true
+            AALogger.forceLog(TAG, "Starting playlist observation")
             startObservingPlaylists()
         }
 
         return try {
             buildListTemplate()
         } catch (e: Exception) {
-            Log.e(TAG, "Error building template", e)
+            AALogger.logError(TAG, "Error building template", e)
             buildErrorTemplate()
         }
     }
@@ -279,20 +290,39 @@ class PlaylistDetailScreen(
 
     override fun onGetTemplate(): Template {
         if (isLoading) {
+            AALogger.forceLog(TAG, "PlaylistDetail: loading tracks for '${playlist.title}' url=${playlist.url}")
             lifecycleScope.launch {
-                val result = fetcher.fetchTracks(playlist.url)
-                result.fold(
-                    onSuccess = { 
-                        tracks = it
-                        isLoading = false
-                        invalidate()
-                    },
-                    onFailure = {
+                try {
+                    val result = withTimeoutOrNull(20_000L) {
+                        fetcher.fetchTracks(playlist.url)
+                    }
+                    if (result == null) {
+                        AALogger.logError(TAG, "PlaylistDetail: fetchTracks TIMEOUT after 20s for '${playlist.title}'")
                         isError = true
                         isLoading = false
                         invalidate()
+                    } else {
+                        result.fold(
+                            onSuccess = { 
+                                AALogger.forceLog(TAG, "PlaylistDetail: loaded ${it.size} tracks for '${playlist.title}'")
+                                tracks = it
+                                isLoading = false
+                                invalidate()
+                            },
+                            onFailure = { e ->
+                                AALogger.logError(TAG, "PlaylistDetail: fetchTracks FAILED for '${playlist.title}'", e)
+                                isError = true
+                                isLoading = false
+                                invalidate()
+                            }
+                        )
                     }
-                )
+                } catch (e: Exception) {
+                    AALogger.logError(TAG, "PlaylistDetail: unexpected error loading tracks", e)
+                    isError = true
+                    isLoading = false
+                    invalidate()
+                }
             }
             return androidx.car.app.model.ListTemplate.Builder()
                 .setTitle(playlist.title)

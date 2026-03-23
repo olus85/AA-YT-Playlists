@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-03-23
+
+### Added
+- **Fallback Media Browser Service**: Implemented a functional `MediaBrowserServiceCompat` as a fallback for headunits that ignore the CarAppService templates. It serves real playlist data from the database.
+- **In-App Diagnostics & Log-Viewer**: Added a dedicated diagnostics dialog (accessible via settings gear) to monitor AA activity in real-time.
+- **Global Logger (AALogger)**: A robust, file-based logging system with rotation, status toggle, and critical event tracking.
+
+### Fixed
+- **Infinite Loading on Headunit**: Added a 20-second timeout to track fetching and optimized the automotive descriptor to prevent media-browse-overrides.
+- **Diagnostics Sharing**: Fixed the share intent functionality to support all Android versions and corrected FLAG_ACTIVITY_NEW_TASK crashes.
+- **Logger Initialization**: Now defaults to 'Enabled' on first run and captures early boot/service events via `forceLog`.
+
 ## [1.3.1] - 2026-03-19
 
 ### Fixed

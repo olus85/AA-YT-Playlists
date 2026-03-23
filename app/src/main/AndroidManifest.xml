@@ -50,6 +50,15 @@
             </intent-filter>
         </service>
 
+        <!-- Dummy Media Browser Service for headunit visibility -->
+        <service
+            android:name=".service.DummyMediaBrowserService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
         <meta-data
             android:name="androidx.car.app.minCarApiLevel"
             android:value="1" />

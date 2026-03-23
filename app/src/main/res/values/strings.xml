@@ -22,4 +22,11 @@
     <string name="error_fetch_failed">Metadaten konnten nicht geladen werden</string>
     <string name="error_no_app">Keine App gefunden</string>
     <string name="search_cover_web">Cover im Web suchen</string>
+    <string name="settings">Einstellungen</string>
+    <string name="diagnostics_title">Android Auto Diagnostik</string>
+    <string name="debug_mode">Debug-Modus</string>
+    <string name="debug_mode_hint">Wenn aktiviert, werden Android Auto Verbindungsdaten und Fehler lokal gespeichert.</string>
+    <string name="refresh_logs">Aktualisieren</string>
+    <string name="share_logs">Teilen</string>
+    <string name="clear_logs">Löschen</string>
 </resources>

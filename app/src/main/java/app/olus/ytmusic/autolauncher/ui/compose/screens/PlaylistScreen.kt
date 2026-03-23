@@ -48,6 +48,9 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -55,6 +58,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
@@ -75,6 +80,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -97,6 +104,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.olus.ytmusic.autolauncher.YTMusicAutoLauncherApp
+import app.olus.ytmusic.autolauncher.util.AALogger
 import app.olus.ytmusic.autolauncher.domain.model.Playlist
 import app.olus.ytmusic.autolauncher.R
 import app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed
@@ -127,6 +135,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<Playlist?>(null) }
     var showEditDialog by remember { mutableStateOf<Playlist?>(null) }
+    var showDiagnosticsDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val app = context.applicationContext as YTMusicAutoLauncherApp
@@ -160,6 +169,15 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showDiagnosticsDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.settings),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.largeTopAppBarColors(
@@ -242,6 +260,13 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                 showEditDialog = null
             },
             onDismiss = { showEditDialog = null }
+        )
+    }
+
+    // Diagnostics Dialog
+    if (showDiagnosticsDialog) {
+        DiagnosticsDialog(
+            onDismiss = { showDiagnosticsDialog = false }
         )
     }
 }
@@ -870,6 +895,139 @@ fun SearchCoverDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(app.olus.ytmusic.autolauncher.R.string.cancel), color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Diagnostics Dialog
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun DiagnosticsDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var debugEnabled by remember { mutableStateOf(AALogger.isEnabled) }
+    var logText by remember { mutableStateOf(AALogger.getLogs()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                stringResource(R.string.diagnostics_title),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.75f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Debug toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.debug_mode),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Switch(
+                        checked = debugEnabled,
+                        onCheckedChange = {
+                            debugEnabled = it
+                            AALogger.isEnabled = it
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = YTRed
+                        )
+                    )
+                }
+
+                Text(
+                    stringResource(R.string.debug_mode_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = { logText = AALogger.getLogs() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.refresh_logs), color = YTRed)
+                    }
+                    TextButton(
+                        onClick = {
+                            val logs = AALogger.getLogs()
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "AA Debug Logs")
+                                putExtra(Intent.EXTRA_TEXT, logs)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Logs teilen").apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.share_logs), color = YTRed)
+                    }
+                    TextButton(
+                        onClick = {
+                            AALogger.clearLogs()
+                            logText = AALogger.getLogs()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.clear_logs), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+
+                // Log viewer
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Text(
+                        text = logText,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState()),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel), color = MaterialTheme.colorScheme.onSurface)
             }
         }
     )
