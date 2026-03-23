@@ -2,8 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-03-23
+## [1.4.1] - 2026-03-23
 
+### Fixed
+- **MediaBrowser Hierarchy**: Reworked the root tree to prevent Android Auto from converting playlist folders into unwanted top-level tabs. Playlists now properly display as an expanding list.
+- **Track Playback State**: Temporarily sets `STATE_ERROR` upon track selection to force Android Auto to drop the "fetching selection" spinner, allowing YouTube Music to grab audio focus seamlessly.
+- **Video ID Parsing**: Fixed truncation bug for video IDs containing underscores (e.g., Loredana tracks) which previously broke playback.
+- **PlaylistReceiver Shuffle override**: Removed automatic `&shuffle=0` appending for specific `videoId` intents, fixing the bug where YouTube Music always played the first song.
+
+## [1.4.0] - 2026-03-23
 ### Added
 - **Fallback Media Browser Service**: Implemented a functional `MediaBrowserServiceCompat` as a fallback for headunits that ignore the CarAppService templates. It serves real playlist data from the database.
 - **In-App Diagnostics & Log-Viewer**: Added a dedicated diagnostics dialog (accessible via settings gear) to monitor AA activity in real-time.

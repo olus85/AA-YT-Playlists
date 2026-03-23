@@ -36,9 +36,10 @@ class PlaylistReceiver : BroadcastReceiver() {
             val videoId = uri.getQueryParameter("v")
             
             if (videoId != null && listId != null) {
-                return "https://music.youtube.com/watch?v=$videoId&list=$listId&shuffle=0"
+                // DO NOT add &shuffle=0 if v is present! It forces YT Music to play the list from the start!
+                return "https://music.youtube.com/watch?v=$videoId&list=$listId"
             } else if (listId != null) {
-                // Build a proper playback URL with the list ID
+                // If NO video is specified, we want to play the whole list from the start, so shuffle=0 is good.
                 return "https://music.youtube.com/watch?list=$listId&shuffle=0"
             }
             
