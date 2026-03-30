@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -73,6 +74,9 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     /** Timestamp of last launch; state-sync suppressed until elapsed > LAUNCH_SUPPRESS_DURATION_MS */
     private val lastLaunchTimestamp = AtomicLong(0L)
+
+    private var lastLoadedBitmapUri: String? = null
+    private var lastLoadedBitmap: android.graphics.Bitmap? = null
 
     private val ytMusicPackages = listOf(
         "app.rvx.android.apps.youtube.music",
@@ -483,14 +487,62 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)?.let {
                         builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, it)
                     }
-                    metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)?.let {
-                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
+                    val artBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    val albumArtBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                    
+                    val artUri = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) 
+                                ?: metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)
+
+                    if (artBmp != null) {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artBmp)
+                    } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, lastLoadedBitmap)
                     }
-                    metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)?.let {
-                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+                    
+                    if (albumArtBmp != null) {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, albumArtBmp)
+                    } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, lastLoadedBitmap)
                     }
+
                     mediaSession.setMetadata(builder.build())
                     AALogger.log(TAG, "Proxy: Synced metadata → ${metadata.getString(MediaMetadata.METADATA_KEY_TITLE)}")
+
+                    if (artBmp == null && albumArtBmp == null && !artUri.isNullOrEmpty() && lastLoadedBitmapUri != artUri) {
+                        lastLoadedBitmapUri = artUri // verhinder mehrmaliges Ausführen
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val uri = android.net.Uri.parse(artUri)
+                                val inputStream = if (artUri.startsWith("http")) {
+                                    java.net.URL(artUri).readBytes().inputStream()
+                                } else {
+                                    contentResolver.openInputStream(uri)
+                                }
+                                
+                                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                                inputStream?.close()
+
+                                if (bitmap != null) {
+                                    lastLoadedBitmap = bitmap
+                                    withContext(Dispatchers.Main) {
+                                        val currentMeta = mediaSession.controller.metadata
+                                        if (currentMeta != null) {
+                                            val currentBuilder = MediaMetadataCompat.Builder(currentMeta)
+                                            currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
+                                            currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                                            mediaSession.setMetadata(currentBuilder.build())
+                                            AALogger.log(TAG, "Proxy: Applied lazy artwork")
+                                        }
+                                    }
+                                } else {
+                                    lastLoadedBitmapUri = null // reset falls fehlgeschlagen
+                                }
+                            } catch (e: Exception) {
+                                lastLoadedBitmapUri = null
+                                AALogger.log(TAG, "Proxy: Failed to lazily load artwork: ${e.message}")
+                            }
+                        }
+                    }
                 } catch (e: Exception) {
                     AALogger.logError(TAG, "Proxy: Error syncing metadata", e)
                 }

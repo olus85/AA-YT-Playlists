@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -281,7 +282,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                         onSaveOrder = { viewModel.savePlaylistOrder(it) },
                         onDelete = { showDeleteDialog = it },
                         onEditPlaylist = { showEditDialog = it },
-                        onRefreshMetadata = { viewModel.refreshPlaylistMetadata(it) }
+                        onRefreshMetadata = { viewModel.forceRefreshPlaylist(it) }
                     )
                 }
             }
@@ -573,6 +574,7 @@ fun DraggablePlaylistList(
                         playlist = playlist,
                         onDelete = { onDelete(playlist) },
                         onEditTitle = { onEditPlaylist(playlist) },
+                        onRefreshMetadata = { onRefreshMetadata(playlist) },
                         isDragging = isDragging,
                         dragModifier = Modifier.detectReorder(state),
                         modifier = Modifier
@@ -594,6 +596,7 @@ fun PlaylistItem(
     playlist: Playlist,
     onDelete: () -> Unit,
     onEditTitle: () -> Unit,
+    onRefreshMetadata: () -> Unit,
     isDragging: Boolean = false,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
@@ -715,6 +718,17 @@ fun PlaylistItem(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                IconButton(
+                    onClick = onRefreshMetadata,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.refresh),
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(
                     onClick = onEditTitle,
                     modifier = Modifier.size(36.dp)

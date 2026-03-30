@@ -133,6 +133,26 @@ class PlaylistViewModel @Inject constructor(
         }
     }
 
+    fun forceRefreshPlaylist(playlist: Playlist) {
+        viewModelScope.launch {
+            // Clear memory cache so the service will pull fresh tracks next time
+            metadataFetcher.clearTrackCache(playlist.url)
+            
+            // Re-fetch metadata
+            val result = metadataFetcher.fetchMetadata(playlist.url)
+            result.fold(
+                onSuccess = { metadata ->
+                    // ONLY update track count and duration, DO NOT touch custom titles/images
+                    repository.updatePlaylist(playlist.copy(
+                        trackCount = metadata.trackCount ?: playlist.trackCount,
+                        duration = metadata.duration ?: playlist.duration
+                    ))
+                },
+                onFailure = { /* keep existing data */ }
+            )
+        }
+    }
+
     fun resetAddPlaylistState() {
         _addPlaylistState.value = AddPlaylistState()
     }

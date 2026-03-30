@@ -14,8 +14,8 @@ android {
         applicationId = "app.olus.ytmusic.autolauncher"
         minSdk = 23
         targetSdk = 35
-        versionCode = 8
-        versionName = "2.0.0"
+        versionCode = 9
+        versionName = "2.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

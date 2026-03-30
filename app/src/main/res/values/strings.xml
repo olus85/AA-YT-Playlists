@@ -34,4 +34,5 @@
     <string name="notification_access_button">Berechtigung erteilen</string>
     <string name="overlay_permission_title">Über anderen Apps anzeigen</string>
     <string name="overlay_permission_description">Wird benötigt, um YouTube Music auch aus dem Hintergrund starten zu können, wenn die App nicht im Vordergrund ist.</string>
+    <string name="refresh">Aktualisieren</string>
 </resources>

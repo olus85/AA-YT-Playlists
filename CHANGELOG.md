@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-03-31
+
+### Added
+- **Manual Playlist Refresh**: Added a dedicated refresh button to each playlist card. This forces a metadata re-fetch and clears the in-memory track cache, ensuring Android Auto immediately reflects new songs added via YouTube Music without overwriting your custom playlist titles or covers.
+- **Lazy Thumbnail Fallback**: Implemented an async image loader in the proxy service that steps in when YouTube Music transmits a song's metadata without its actual cover bitmap (e.g. when launched from the background with the smartphone screen locked). This reliably prevents "black squares" and ensures the album art appears immediately on the initial track play.
+
 ## [2.0.0] - 2026-03-30
 
 ### Added

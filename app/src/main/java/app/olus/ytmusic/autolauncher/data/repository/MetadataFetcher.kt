@@ -39,6 +39,14 @@ class MetadataFetcher {
     // In-memory cache for tracks
     private val trackCache = android.util.LruCache<String, List<Track>>(20)
 
+    fun clearTrackCache(url: String) {
+        val playlistId = extractPlaylistId(url)
+        if (playlistId != null) {
+            trackCache.remove(playlistId)
+            Log.d(TAG, "Cleared track cache for playlist: $playlistId")
+        }
+    }
+
     suspend fun prefetchInstances() {
         getActiveInstances()
     }
