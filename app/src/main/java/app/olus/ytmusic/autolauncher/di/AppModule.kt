@@ -5,6 +5,7 @@ import app.olus.ytmusic.autolauncher.data.local.PlaylistDatabase
 import app.olus.ytmusic.autolauncher.data.local.dao.PlaylistDao
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
+import app.olus.ytmusic.autolauncher.service.MediaSyncManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -42,5 +43,11 @@ object AppModule {
     @Singleton
     fun provideMetadataFetcher(): MetadataFetcher {
         return MetadataFetcher()
+    }
+
+    @Provides
+    @Singleton
+    fun provideMediaSyncManager(): MediaSyncManager {
+        return MediaSyncManager()
     }
 }

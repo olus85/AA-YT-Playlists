@@ -1,21 +1,52 @@
 # AA YT Playlists
 
-AA YT Playlists is an Android Auto application that allows users to manage and play YouTube Music playlists directly from their car's headunit. By leveraging Compose and the Android Auto Car App Library, this application bypasses common restrictions and provides an intuitive, native-feeling interface to interact with YouTube Music seamlessly.
+AA YT Playlists is an Android Auto application that allows users to manage and play YouTube Music playlists directly from their car's headunit. It acts as a transparent **Media Session Proxy** between Android Auto and YouTube Music, providing native playback controls, real-time metadata display, and seamless track/playlist launching.
 
 ## Features
 
-- **Media Browser Service Integration**: Replaces/Augments the Car App Library with `MediaBrowserServiceCompat`, ensuring the app is visible on all physical headunits as a native media source.
-- **Direct Car App Rendering**: Built using the Car App Library, providing native layouts and smooth performance directly on the vehicle's infotainment screen.
-- **YouTube App Integration**: Launches specific YouTube playlists locally via Intents or integrates with `app.rvx.android.apps.youtube.music` directly from Android Auto.
-- **Background Metadata Fetching**: Pulls playlist details (thumbnails, track counts, duration) dynamically.
-- **Offline Caching**: Caches images and data using Coil and Room for a reliable experience even when driving through poor network zones.
+- **Native Media Session Proxy**: Mirrors YouTube Music's playback state (title, artist, album art, progress) directly onto Android Auto's media interface in real time.
+- **Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no hacks.
+- **Shuffle Play**: One-tap shuffle-play for entire playlists, directly from the car's media UI.
+- **Transport Control Forwarding**: Play, Pause, Skip, Seek from the steering wheel or headunit are forwarded to YouTube Music.
+- **Background Playback Launch**: Starts YouTube Music playback even when the app isn't in the foreground, using Foreground Service promotion and `SYSTEM_ALERT_WINDOW` permission.
+- **Metadata Fetching**: Pulls playlist details (thumbnails, track counts, duration) dynamically from YouTube.
+- **Offline Caching**: Caches images and data using Coil and Room for reliable performance even in poor network conditions.
+- **ReVanced Support**: Compatible with `app.rvx.android.apps.youtube.music`, `app.revanced.android.apps.youtube.music`, and the official `com.google.android.apps.youtube.music`.
+
+## Architecture
+
+```
+Android Auto Headunit
+    │
+    ├── MediaBrowser ──► YTMediaBrowserService
+    │                        │  (hierarchical: root → playlists → tracks)
+    │                        │
+    │   ◄── MediaSession ────┘  (mirrors YT Music state via proxy sync)
+    │
+    └── Transport Controls ──► MediaSyncManager ──► YT Music MediaController
+                                    ▲
+                                    │
+                               YTMediaProxyService
+                           (NotificationListenerService)
+                        discovers YT Music sessions via
+                           MediaSessionManager
+```
+
+## Required Permissions
+
+After installing, two permissions must be granted manually:
+
+1. **Notification Access** — Required for the proxy to discover YouTube Music's media session.
+2. **Display Over Other Apps** — Required to launch YouTube Music from the background when the app isn't in the foreground.
+
+Both permissions are requested via in-app banners that link directly to the relevant system settings.
 
 ## Installation
 
-To ensure the application shows up correctly in Android Auto headunits (which often block side-loaded apps), it must be installed via ADB using the Play Store installer package.
+To ensure the application shows up correctly on Android Auto headunits (which often block side-loaded apps), install via ADB using the Play Store installer package:
 
 ```bash
-adb install -r -i "com.android.vending" app-debug.apk
+adb install -r -i "com.android.vending" app-release.apk
 ```
 
 ## Building from source

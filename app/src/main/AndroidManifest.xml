@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <queries>
         <package android:name="app.rvx.android.apps.youtube.music" />
@@ -40,7 +43,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Android Auto Car App Service -->
+        <!-- Android Auto Car App Service (POI template-based, for DHU/emulator) -->
         <service
             android:name=".ui.auto.YTMusicCarAppService"
             android:exported="true">
@@ -50,12 +53,23 @@
             </intent-filter>
         </service>
 
-        <!-- Dummy Media Browser Service for headunit visibility -->
+        <!-- Native Media Browser Service for Android Auto headunits -->
         <service
-            android:name=".service.DummyMediaBrowserService"
-            android:exported="true">
+            android:name=".service.YTMediaBrowserService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- Notification Listener Service for YT Music proxy -->
+        <service
+            android:name=".service.YTMediaProxyService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
 
@@ -63,7 +77,7 @@
             android:name="androidx.car.app.minCarApiLevel"
             android:value="1" />
 
-        <!-- Receiver to bridge car clicks to mobile activity -->
+        <!-- Receiver to bridge car clicks to mobile activity (fallback for CarAppService) -->
         <receiver
             android:name=".ui.PlaylistReceiver"
             android:exported="false">

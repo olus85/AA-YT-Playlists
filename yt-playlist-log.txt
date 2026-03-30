@@ -1,0 +1,173 @@
+[2026-03-30 05:11:14.547] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_3
+[2026-03-30 05:11:14.551] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:11:14.585] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=OLAK5uy_lZQtmU5TtShIhFBZPmkG9WmFXmuz24_1Q&shuffle=1
+[2026-03-30 05:11:14.585] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=OLAK5uy_lZQtmU5TtShIhFBZPmkG9WmFXmuz24_1Q&shuffle=1
+[2026-03-30 05:11:14.591] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:11:14.603] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:15.016] F/YTMediaProxyService: Active sessions changed: 2 sessions
+[2026-03-30 05:11:15.017] D/YTMediaProxyService:   Session: app.olus.ytmusic.autolauncher tag=YTMediaBrowserService
+[2026-03-30 05:11:15.018] D/YTMediaProxyService:   Session: com.google.android.googlequicksearchbox tag=AssistantMediaPlayer: AMP-auto-session-identifier
+[2026-03-30 05:11:15.019] D/YTMediaProxyService: No YT Music session found among active sessions
+[2026-03-30 05:11:15.108] F/YTMediaProxyService: Active sessions changed: 3 sessions
+[2026-03-30 05:11:15.112] D/YTMediaProxyService:   Session: app.olus.ytmusic.autolauncher tag=YTMediaBrowserService
+[2026-03-30 05:11:15.112] D/YTMediaProxyService:   Session: com.google.android.googlequicksearchbox tag=AssistantMediaPlayer: AMP-auto-session-identifier
+[2026-03-30 05:11:15.113] D/YTMediaProxyService:   Session: app.rvx.android.apps.youtube.music tag=YouTube playerlib
+[2026-03-30 05:11:15.113] F/YTMediaProxyService: Found YT Music session: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:15.113] F/MediaSyncManager: setActiveController: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:15.117] F/MediaSyncManager: Initial metadata: Verbrannte Erde
+[2026-03-30 05:11:15.117] F/MediaSyncManager: Initial state: 0
+[2026-03-30 05:11:15.119] D/YTMediaBrowserService: Proxy: Synced metadata → Verbrannte Erde
+[2026-03-30 05:11:15.120] D/YTMediaBrowserService: Proxy: State (0) suppressed
+[2026-03-30 05:11:15.127] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:15.128] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:15.192] D/MediaSyncManager: Metadata changed: Verbrannte Erde
+[2026-03-30 05:11:15.195] D/YTMediaBrowserService: Proxy: Synced metadata → Verbrannte Erde
+[2026-03-30 05:11:16.010] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:16.010] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:16.011] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:16.011] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:16.013] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:16.013] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:16.041] D/MediaSyncManager: Metadata changed: Über sie hinaus
+[2026-03-30 05:11:16.043] D/YTMediaBrowserService: Proxy: Synced metadata → Über sie hinaus
+[2026-03-30 05:11:16.049] D/MediaSyncManager: Metadata changed: Über sie hinaus
+[2026-03-30 05:11:16.342] D/MediaSyncManager: PlaybackState changed: 6
+[2026-03-30 05:11:16.343] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.344] F/YTMediaBrowserService: Proxy: STATE_PLAYING during suppression → lifting
+[2026-03-30 05:11:16.345] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:16.355] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.355] D/MediaSyncManager: Metadata changed: Über sie hinaus
+[2026-03-30 05:11:16.357] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:16.363] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.365] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:16.366] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.367] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.369] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:16.380] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.381] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.381] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.381] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.381] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.381] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:16.384] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:16.486] D/MediaSyncManager: Metadata changed: Über sie hinaus
+[2026-03-30 05:11:16.487] D/YTMediaBrowserService: Proxy: Synced metadata → Über sie hinaus
+[2026-03-30 05:11:17.439] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:17.441] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:19.620] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:11:19.746] D/YTMediaBrowserService: onPause → forwarding
+[2026-03-30 05:11:19.748] D/MediaSyncManager: Forwarding: pause()
+[2026-03-30 05:11:19.777] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:19.796] D/YTMediaBrowserService: Proxy: Synced state → 2
+[2026-03-30 05:11:24.714] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_7
+[2026-03-30 05:11:24.718] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:11:24.731] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:11:24.733] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:11:24.745] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:11:24.760] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:29.788] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:11:31.908] F/YTMediaBrowserService: onPlayFromMediaId: track_7_2Jvj_A5Ypys
+[2026-03-30 05:11:31.934] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:11:31.940] F/YTMediaBrowserService: Launching track: https://music.youtube.com/watch?v=2Jvj_A5Ypys&list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH
+[2026-03-30 05:11:31.941] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?v=2Jvj_A5Ypys&list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH
+[2026-03-30 05:11:31.949] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:11:31.963] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:35.991] D/YTMediaBrowserService: onPlay → forwarding
+[2026-03-30 05:11:36.016] D/MediaSyncManager: Forwarding: play()
+[2026-03-30 05:11:36.099] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:36.101] F/YTMediaBrowserService: Proxy: STATE_PLAYING during suppression → lifting
+[2026-03-30 05:11:36.104] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:36.111] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:36.113] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:36.976] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:11:37.956] D/YTMediaBrowserService: onPause → forwarding
+[2026-03-30 05:11:37.958] D/MediaSyncManager: Forwarding: pause()
+[2026-03-30 05:11:37.984] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:38.000] D/YTMediaBrowserService: Proxy: Synced state → 2
+[2026-03-30 05:11:41.727] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_5
+[2026-03-30 05:11:41.738] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:11:41.748] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5&shuffle=1
+[2026-03-30 05:11:41.749] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5&shuffle=1
+[2026-03-30 05:11:41.760] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:11:41.768] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:46.774] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:11:47.171] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:47.172] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:47.226] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:47.228] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:47.250] D/MediaSyncManager: Metadata changed: Über sie hinaus
+[2026-03-30 05:11:47.251] D/YTMediaBrowserService: Proxy: Synced metadata → Über sie hinaus
+[2026-03-30 05:11:56.652] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_5
+[2026-03-30 05:11:56.655] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:11:56.659] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5&shuffle=1
+[2026-03-30 05:11:56.660] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5&shuffle=1
+[2026-03-30 05:11:56.665] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:11:56.678] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:11:56.764] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:56.765] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:56.806] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.807] D/YTMediaBrowserService: Proxy: State (1) suppressed
+[2026-03-30 05:11:56.836] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:56.837] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:56.838] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:56.838] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:56.840] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.841] D/YTMediaBrowserService: Proxy: State (1) suppressed
+[2026-03-30 05:11:56.845] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.845] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.846] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.846] D/MediaSyncManager: PlaybackState changed: 1
+[2026-03-30 05:11:56.846] D/YTMediaBrowserService: Proxy: State (1) suppressed
+[2026-03-30 05:11:56.847] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:56.848] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:56.848] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:57.342] D/MediaSyncManager: Metadata changed: 
+[2026-03-30 05:11:57.347] D/YTMediaBrowserService: Proxy: Synced metadata → 
+[2026-03-30 05:11:57.643] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:11:57.644] D/YTMediaBrowserService: Proxy: State (2) suppressed
+[2026-03-30 05:11:57.654] D/MediaSyncManager: Metadata changed: okayletsgo
+[2026-03-30 05:11:57.657] D/YTMediaBrowserService: Proxy: Synced metadata → okayletsgo
+[2026-03-30 05:11:57.873] D/MediaSyncManager: Metadata changed: okayletsgo
+[2026-03-30 05:11:57.994] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:57.994] F/YTMediaBrowserService: Proxy: STATE_PLAYING during suppression → lifting
+[2026-03-30 05:11:57.996] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:57.999] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:58.002] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:58.002] D/MediaSyncManager: Metadata changed: okayletsgo
+[2026-03-30 05:11:58.004] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:58.056] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:58.059] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:11:58.084] D/MediaSyncManager: Metadata changed: okayletsgo
+[2026-03-30 05:11:58.085] D/YTMediaBrowserService: Proxy: Synced metadata → okayletsgo
+[2026-03-30 05:11:59.052] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:11:59.060] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:12:00.432] D/YTMediaBrowserService: onPause → forwarding
+[2026-03-30 05:12:00.435] D/MediaSyncManager: Forwarding: pause()
+[2026-03-30 05:12:00.466] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:12:00.468] D/YTMediaBrowserService: Proxy: Synced state → 2
+[2026-03-30 05:12:01.683] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:12:04.669] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_7
+[2026-03-30 05:12:04.673] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:12:04.676] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:12:04.676] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:12:04.682] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:12:04.692] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:12:07.453] D/YTMediaBrowserService: onPlay → forwarding
+[2026-03-30 05:12:07.454] D/MediaSyncManager: Forwarding: play()
+[2026-03-30 05:12:07.525] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:12:07.526] F/YTMediaBrowserService: Proxy: STATE_PLAYING during suppression → lifting
+[2026-03-30 05:12:07.527] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:12:07.550] D/MediaSyncManager: PlaybackState changed: 3
+[2026-03-30 05:12:07.553] D/YTMediaBrowserService: Proxy: Synced state → 3
+[2026-03-30 05:12:08.729] D/YTMediaBrowserService: onPause → forwarding
+[2026-03-30 05:12:08.730] D/MediaSyncManager: Forwarding: pause()
+[2026-03-30 05:12:08.754] D/MediaSyncManager: PlaybackState changed: 2
+[2026-03-30 05:12:08.758] D/YTMediaBrowserService: Proxy: Synced state → 2
+[2026-03-30 05:12:09.701] D/YTMediaBrowserService: Demoted from foreground service
+[2026-03-30 05:12:11.882] F/YTMediaBrowserService: onPlayFromMediaId: shuffle_7
+[2026-03-30 05:12:11.884] F/YTMediaBrowserService: beginLaunch: STATE_CONNECTING set, suppression ON (6000ms)
+[2026-03-30 05:12:11.889] F/YTMediaBrowserService: Launching shuffle: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:12:11.891] F/YTMediaBrowserService: launchYouTubeMusic: https://music.youtube.com/watch?list=PLwcwY96FftHgWD4H3wA66aTmA4PKvx3mH&shuffle=1
+[2026-03-30 05:12:11.899] F/YTMediaBrowserService: Promoted to foreground service
+[2026-03-30 05:12:11.912] F/YTMediaBrowserService: Successfully launched via: app.rvx.android.apps.youtube.music
+[2026-03-30 05:12:16.918] D/YTMediaBrowserService: Demoted from foreground service

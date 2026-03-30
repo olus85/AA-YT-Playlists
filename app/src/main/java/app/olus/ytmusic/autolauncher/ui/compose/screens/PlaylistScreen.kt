@@ -2,6 +2,7 @@ package app.olus.ytmusic.autolauncher.ui.compose.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -71,6 +73,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,6 +85,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -206,22 +213,77 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
             }
         }
     ) { paddingValues ->
-        Box(
+        // Permission checks
+        val lifecycleOwner = LocalLifecycleOwner.current
+        var hasNotificationAccess by remember { mutableStateOf(true) }
+        var hasOverlayPermission by remember { mutableStateOf(true) }
+
+        fun checkPermissions() {
+            val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(context)
+            hasNotificationAccess = enabledPackages.contains(context.packageName)
+            hasOverlayPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.provider.Settings.canDrawOverlays(context)
+            } else {
+                true
+            }
+        }
+
+        LaunchedEffect(Unit) { checkPermissions() }
+
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) { checkPermissions() }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (playlists.isEmpty()) {
-                EmptyState()
-            } else {
-                DraggablePlaylistList(
-                    playlists = playlists,
-                    paddingValues = PaddingValues(0.dp),
-                    onSaveOrder = { viewModel.savePlaylistOrder(it) },
-                    onDelete = { showDeleteDialog = it },
-                    onEditPlaylist = { showEditDialog = it },
-                    onRefreshMetadata = { viewModel.refreshPlaylistMetadata(it) }
+            // Notification access banner
+            AnimatedVisibility(visible = !hasNotificationAccess) {
+                NotificationAccessBanner(
+                    onGrantClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
                 )
+            }
+
+            // Overlay permission banner
+            AnimatedVisibility(visible = hasNotificationAccess && !hasOverlayPermission) {
+                OverlayPermissionBanner(
+                    onGrantClick = {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            context.startActivity(
+                                Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                )
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+                if (playlists.isEmpty()) {
+                    EmptyState()
+                } else {
+                    DraggablePlaylistList(
+                        playlists = playlists,
+                        paddingValues = PaddingValues(0.dp),
+                        onSaveOrder = { viewModel.savePlaylistOrder(it) },
+                        onDelete = { showDeleteDialog = it },
+                        onEditPlaylist = { showEditDialog = it },
+                        onRefreshMetadata = { viewModel.refreshPlaylistMetadata(it) }
+                    )
+                }
             }
         }
     }
@@ -268,6 +330,116 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
         DiagnosticsDialog(
             onDismiss = { showDiagnosticsDialog = false }
         )
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Notification Access Banner
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun NotificationAccessBanner(onGrantClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = YTRed.copy(alpha = 0.12f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = YTRed,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.notification_access_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.notification_access_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(onClick = onGrantClick) {
+                Text(
+                    text = stringResource(R.string.notification_access_button),
+                    color = YTRed,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Overlay Permission Banner
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun OverlayPermissionBanner(onGrantClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = YTRed.copy(alpha = 0.12f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = YTRed,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.overlay_permission_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.overlay_permission_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(onClick = onGrantClick) {
+                Text(
+                    text = stringResource(R.string.notification_access_button),
+                    color = YTRed,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
     }
 }
 

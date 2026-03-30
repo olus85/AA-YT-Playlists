@@ -29,4 +29,9 @@
     <string name="refresh_logs">Aktualisieren</string>
     <string name="share_logs">Teilen</string>
     <string name="clear_logs">Löschen</string>
+    <string name="notification_access_title">Benachrichtigungszugriff erforderlich</string>
+    <string name="notification_access_description">Für die Android Auto Proxy-Funktion wird der Benachrichtigungszugriff benötigt, um YouTube Music zu steuern.</string>
+    <string name="notification_access_button">Berechtigung erteilen</string>
+    <string name="overlay_permission_title">Über anderen Apps anzeigen</string>
+    <string name="overlay_permission_description">Wird benötigt, um YouTube Music auch aus dem Hintergrund starten zu können, wenn die App nicht im Vordergrund ist.</string>
 </resources>

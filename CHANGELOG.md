@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-03-30
+
+### Added
+- **Native Media Session Proxy Architecture**: Complete rewrite of the Android Auto service stack. The app now acts as a transparent proxy between Android Auto and YouTube Music.
+- **YTMediaProxyService (NotificationListenerService)**: Listens for active YouTube Music media sessions (including ReVanced variants), capturing real-time metadata (title, artist, album art) and playback state.
+- **MediaSyncManager**: Singleton bridge that pipes YT Music session state as `StateFlow`s between the proxy service and the Auto browser service. Provides transport-control forwarding (`play()`, `pause()`, `skipToNext()`, `skipToPrevious()`, `seekTo()`).
+- **YTMediaBrowserService**: Hierarchical `MediaBrowserServiceCompat` with flat root → playlist → track browsing. Includes 10-second timeout protection for track fetching.
+- **"▶ Shuffle abspielen" Action**: First item in every track list allows shuffle-playing the entire playlist directly from Android Auto.
+- **Foreground Service Promotion**: Service temporarily promotes to foreground before launching YouTube Music, ensuring reliable activity starts.
+- **SYSTEM_ALERT_WINDOW Permission**: Added "Display over other apps" permission to guarantee background activity launches work on Android 10–16, even when the app is not in the foreground.
+- **Notification Access Permission Banner**: Prominent UI banner guiding the user to grant notification listener access.
+- **Overlay Permission Banner**: Second UI banner guiding the user to grant "Display over other apps" permission. Both banners auto-refresh on lifecycle resume.
+- **Transport Control Forwarding**: Play, Pause, Skip, Seek commands from the car's steering wheel are forwarded directly to YouTube Music's active MediaController.
+
+### Changed
+- **Playback State**: Replaced all `STATE_ERROR` hacks with `STATE_CONNECTING` + dummy metadata ("Lade...", "YouTube Music") when launching playback.
+- **Launch Suppression**: 6-second state-sync suppression window prevents stale YT Music state from overwriting `STATE_CONNECTING`. Only `STATE_PLAYING` lifts suppression early. Metadata is never suppressed.
+- **Playlist Launch URL**: Auto playlist clicks now use `&shuffle=1` to start in shuffle mode.
+- **Direct Service Launch**: Playback intents fired directly via `startActivity()` from the service instead of via BroadcastReceiver.
+- **Browser Hierarchy**: Removed the intermediate "tab_playlists" layer. Root now directly returns all playlists as browsable items.
+
+### Removed
+- **DummyMediaBrowserService**: The old hack-based fallback service using `STATE_ERROR` has been completely replaced by `YTMediaBrowserService`.
+
 ## [1.4.1] - 2026-03-23
 
 ### Fixed
