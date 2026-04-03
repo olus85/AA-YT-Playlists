@@ -6,14 +6,14 @@ AA YT Playlists is an Android Auto application that allows users to manage and p
 
 - **Native Media Session Proxy**: Mirrors YouTube Music's playback state (title, artist, album art, progress) directly onto Android Auto's media interface in real time.
 - **Native Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no legacy hacks.
-- **Jellyfin Server Integration**: Connect your self-hosted Jellyfin server, browse albums and playlists, and import them directly into the app. Playback is launched via the Jellyfin Android app.
-- **Full-Screen Lyrics UI**: A stunning, full-screen transparent lyrics dialog with blurred album art and **automatic scrolling** for non-synced tracks.
-- **5-Tier Lyrics Support**: Synchronized lyrics via `lrclib` (exact + fuzzy search), `Megalobiz` scraping, `NetEase Cloud Music`, and plain-text fallback via the **Genius API**.
-- **Shuffle Play**: One-tap shuffle-play for entire playlists, directly from the car's media UI.
-- **Transport Control Forwarding**: Play, Pause, Skip, Seek from the steering wheel or headunit are forwarded to YouTube Music.
-- **Background Playback Launch**: Starts YouTube Music playback even when the app isn't in the foreground, using Foreground Service promotion and `SYSTEM_ALERT_WINDOW` permission.
-- **Metadata Fetching with Retry Logic**: Pulls playlist details (thumbnails, track counts, duration) dynamically with exponential backoff for extreme reliability.
-- **Offline Track Caching**: Track lists are cached in the Room database and served instantly on Android Auto, with silent background refresh for up-to-date playlists.
+- **Native Jellyfin Playback**: Direct, high-performance integration with self-hosted Jellyfin music servers using `ExoPlayer` (Media3). Stream your private library directly within the app with full background support.
+- **Lyrics Cache (Room DB v5)**: Synchronized lyrics are persistently cached after the first retrieval. Subsequent loads are near-instant (< 50ms) and work entirely offline.
+- **Auto-Lyrics Foregrounding**: Automatically brings the app to the foreground and displays the synchronized lyrics dialog on every track change for a hands-free experience.
+- **Screen Keep-Awake**: Prevents the mobile display from timing out while the lyrics dialog is active.
+- **5-Tier Lyrics Support**: Synchronized lyrics via `NetEase Cloud Music` (Primary), `lrclib` (exact + fuzzy), `Megalobiz` scraping, and `Genius API` plain-text fallback.
+- **Shuffle Play**: One-tap shuffle-play for entire playlists (YouTube & Jellyfin), directly from the car's media UI.
+- **Background Playback Launch**: Starts playback even when the app isn't in the foreground, using Foreground Service promotion and `SYSTEM_ALERT_WINDOW` exemptions.
+- **Offline Track Caching**: Track lists (YouTube & Jellyfin) are cached in the Room database and served instantly on Android Auto.
 - **ReVanced Support**: Compatible with `app.rvx.android.apps.youtube.music`, `app.revanced.android.apps.youtube.music`, and the official `com.google.android.apps.youtube.music`.
 
 ## Architecture
@@ -28,12 +28,12 @@ Android Auto Headunit
     │                        │                        + Room DB cache (offline-first)
     │                        │
     │                        └── Jellyfin playlists → JellyfinRepository
-    │                                                  (REST API → Jellyfin App intent)
+    │                                                  (REST API → Native ExoPlayer)
     │
-    │   ◄── MediaSession ────┘  (mirrors YT Music state via proxy sync)
+    │   ◄── MediaSession ────┘  (mirrors YT Music OR Native Jellyfin state)
     │
     └── Transport Controls ──► MediaSyncManager ──► YT Music MediaController
-                                    ▲
+                                    ▲               OR Native Player Controls
                                     │
                                YTMediaProxyService
                            (NotificationListenerService)
