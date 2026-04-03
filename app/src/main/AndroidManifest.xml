@@ -11,6 +11,8 @@
         <package android:name="app.rvx.android.apps.youtube.music" />
         <package android:name="app.revanced.android.apps.youtube.music" />
         <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="org.jellyfin.mobile" />
+        <package android:name="org.jellyfin.androidtv" />
     </queries>
 
     <application

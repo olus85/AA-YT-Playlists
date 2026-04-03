@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent) // Important! update current intent
         handleIntent(intent)
     }
 
@@ -57,6 +58,11 @@ class MainActivity : ComponentActivity() {
                     (application as? YTMusicAutoLauncherApp)?.sharedUrlToProcess = url
                 }
             }
+        }
+        
+        if (intent.action == "app.olus.ytmusic.autolauncher.ACTION_SHOW_LYRICS") {
+            val app = application as? YTMusicAutoLauncherApp
+            app?.triggerLyricsDialog?.value = (app?.triggerLyricsDialog?.value ?: 0) + 1
         }
     }
 

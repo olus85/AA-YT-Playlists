@@ -8,6 +8,8 @@ import dagger.hilt.android.HiltAndroidApp
 class YTMusicAutoLauncherApp : Application() {
     
     var sharedUrlToProcess: String? = null
+    
+    val triggerLyricsDialog = kotlinx.coroutines.flow.MutableStateFlow(0)
 
     override fun onCreate() {
         super.onCreate()

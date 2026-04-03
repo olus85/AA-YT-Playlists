@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
@@ -136,6 +137,7 @@ import kotlinx.coroutines.isActive
 import androidx.compose.ui.draw.blur
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.graphics.Shadow
+import app.olus.ytmusic.autolauncher.ui.compose.components.JellyfinBrowseDialog
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main Screen
@@ -150,7 +152,9 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     var showDeleteDialog by remember { mutableStateOf<Playlist?>(null) }
     var showEditDialog by remember { mutableStateOf<Playlist?>(null) }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var showLyricsDialog by remember { mutableStateOf(false) }
+    var showJellyfinBrowse by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val app = context.applicationContext as YTMusicAutoLauncherApp
@@ -163,7 +167,15 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
         }
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Auto-open lyrics when requested from background track change
+    val lyricsTriggerCount by app.triggerLyricsDialog.collectAsState()
+    LaunchedEffect(lyricsTriggerCount) {
+        if (lyricsTriggerCount > 0) {
+            showLyricsDialog = true
+        }
+    }
+
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     val currentMetadata by viewModel.currentMetadata.collectAsState()
     val currentPlaybackState by viewModel.currentPlaybackState.collectAsState()
@@ -208,7 +220,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                             )
                         }
                     }
-                    IconButton(onClick = { showDiagnosticsDialog = true }) {
+                    IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = stringResource(R.string.settings),
@@ -336,6 +348,10 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
             onSave = {
                 viewModel.addPlaylistAndFetch(addState.url)
                 showAddDialog = false
+            },
+            onJellyfinBrowse = {
+                showAddDialog = false
+                showJellyfinBrowse = true
             }
         )
     }
@@ -362,10 +378,24 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
         )
     }
 
-    // Diagnostics Dialog
-    if (showDiagnosticsDialog) {
-        DiagnosticsDialog(
-            onDismiss = { showDiagnosticsDialog = false }
+    // Settings Dialog (Jellyfin + Diagnostics)
+    if (showSettingsDialog) {
+        SettingsDialog(
+            jellyfinRepository = viewModel.jellyfinRepository,
+            onJellyfinConnected = { /* connection saved internally */ },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    // Jellyfin Browse Dialog
+    if (showJellyfinBrowse) {
+        JellyfinBrowseDialog(
+            jellyfinRepository = viewModel.jellyfinRepository,
+            onItemSelected = { item ->
+                viewModel.importJellyfinItem(item)
+                showJellyfinBrowse = false
+            },
+            onDismiss = { showJellyfinBrowse = false }
         )
     }
 
@@ -827,14 +857,20 @@ fun PlaylistItem(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                val metaText = listOfNotNull(playlist.trackCount, playlist.duration)
-                    .joinToString(" • ")
+                val metaParts = mutableListOf<String>()
+                if (playlist.source == "JELLYFIN") metaParts.add("JF")
+                playlist.trackCount?.let { metaParts.add(it) }
+                playlist.duration?.let { metaParts.add(it) }
+                val metaText = metaParts.joinToString(" • ")
                 if (metaText.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = metaText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (playlist.source == "JELLYFIN") 
+                            MaterialTheme.colorScheme.secondary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -969,9 +1005,11 @@ fun EditPlaylistDialog(
 fun AddPlaylistDialog(
     viewModel: PlaylistViewModel,
     onDismiss: () -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onJellyfinBrowse: () -> Unit = {}
 ) {
     val state by viewModel.addPlaylistState.collectAsState()
+    val jellyfinConfigured = viewModel.jellyfinRepository.isConfigured
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -980,7 +1018,7 @@ fun AddPlaylistDialog(
             Text(stringResource(R.string.add_playlist_title), fontWeight = FontWeight.Bold)
         },
         text = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = state.url,
                     onValueChange = { viewModel.updateUrl(it) },
@@ -994,6 +1032,27 @@ fun AddPlaylistDialog(
                     )
                 )
 
+                if (jellyfinConfigured) {
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onJellyfinBrowse()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Aus Jellyfin importieren", color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1360,22 +1419,19 @@ fun LyricsDialog(
 ) {
     if (metadata == null) return
 
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+
     val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "Unbekannt"
     val artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: "Unbekannt"
     val artUri = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
     
-    // Auto-scroll logic for plain-text lyrics (scroll down one line every 10 seconds)
-    var autoScrollIndex by remember { mutableIntStateOf(0) }
-    LaunchedEffect(lyricsState, playbackState?.state) {
-        if (lyricsState is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Success && !lyricsState.isSynced) {
-            if (playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
-                while(isActive && autoScrollIndex < lyricsState.lyrics.size) {
-                    kotlinx.coroutines.delay(10000) // 10 seconds per line
-                    autoScrollIndex++
-                }
-            }
-        }
-    }
+
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -1478,16 +1534,7 @@ fun LyricsDialog(
                                     }
                                 }
                             } else {
-                                // Auto-scroll for plain-text
-                                LaunchedEffect(autoScrollIndex) {
-                                    if (autoScrollIndex > 0 && autoScrollIndex < lyricsState.lyrics.size) {
-                                        val firstVisible = listState.firstVisibleItemIndex
-                                        val lastVisible = firstVisible + listState.layoutInfo.visibleItemsInfo.size
-                                        if (autoScrollIndex < firstVisible || autoScrollIndex > lastVisible - 3) {
-                                            listState.animateScrollToItem((autoScrollIndex - 3).coerceAtLeast(0))
-                                        }
-                                    }
-                                }
+                                // Plain-text lyrics do not auto-scroll
                             }
 
                             LazyColumn(
@@ -1501,7 +1548,7 @@ fun LyricsDialog(
                                         currentPositionMs >= line.timestampMs && 
                                         (index == lyricsState.lyrics.lastIndex || currentPositionMs < lyricsState.lyrics[index + 1].timestampMs)
                                     } else {
-                                        index == autoScrollIndex
+                                        false
                                     }
                                                    
                                     val activeLineStyle = MaterialTheme.typography.headlineMedium.copy(
@@ -1513,7 +1560,7 @@ fun LyricsDialog(
                                     )
 
                                     val animationScale by animateFloatAsState(if (isActive) 1.05f else 1.0f)
-                                    val animationAlpha by animateFloatAsState(if (isActive) 1.0f else 0.4f)
+                                    val animationAlpha by animateFloatAsState(if (isActive || !lyricsState.isSynced) 1.0f else 0.4f)
 
                                     Text(
                                         text = line.text.ifEmpty { "🎶" },

@@ -1,8 +1,9 @@
 package app.olus.ytmusic.autolauncher.ui.compose.screens
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.olus.ytmusic.autolauncher.data.repository.JellyfinItem
+import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
 import app.olus.ytmusic.autolauncher.domain.model.Playlist
@@ -13,8 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -40,7 +39,8 @@ class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
     private val metadataFetcher: MetadataFetcher,
     val mediaSyncManager: MediaSyncManager,
-    private val lyricsFetcher: LyricsFetcher
+    private val lyricsFetcher: LyricsFetcher,
+    val jellyfinRepository: JellyfinRepository
 ) : ViewModel() {
 
     val currentMetadata: StateFlow<MediaMetadata?> = mediaSyncManager.currentMetadata
@@ -57,7 +57,7 @@ class PlaylistViewModel @Inject constructor(
         viewModelScope.launch {
             // Wait for first emission, then refresh incomplete entries (once)
             val list = playlists.first { it.isNotEmpty() || true }
-            list.filter { it.trackCount == null }.forEach { playlist ->
+            list.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
                 refreshPlaylistMetadata(playlist)
             }
         }
@@ -102,7 +102,8 @@ class PlaylistViewModel @Inject constructor(
                 title = "Lade Metadaten...",
                 imageUrl = "",
                 trackCount = null,
-                duration = null
+                duration = null,
+                source = "YOUTUBE"
             )
             val insertedId = repository.addPlaylist(skeleton).toInt()
             resetAddPlaylistState()
@@ -130,6 +131,25 @@ class PlaylistViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Imports a Jellyfin album/playlist as a new local playlist.
+     */
+    fun importJellyfinItem(item: JellyfinItem) {
+        viewModelScope.launch {
+            val imageUrl = jellyfinRepository.getImageUrl(item.id) ?: ""
+            val playlist = Playlist(
+                url = "${jellyfinRepository.serverUrl}/web/index.html#!/details?id=${item.id}",
+                title = item.name,
+                imageUrl = imageUrl,
+                trackCount = null,
+                duration = if (item.artist.isNotEmpty()) item.artist else null,
+                source = "JELLYFIN",
+                externalId = item.id
+            )
+            repository.addPlaylist(playlist)
+        }
+    }
+
     fun updatePlaylistDetails(playlist: Playlist, newTitle: String, newImageUrl: String) {
         viewModelScope.launch {
             repository.updatePlaylist(playlist.copy(title = newTitle, imageUrl = newImageUrl))
@@ -152,6 +172,7 @@ class PlaylistViewModel @Inject constructor(
     }
 
     fun refreshPlaylistMetadata(playlist: Playlist) {
+        if (playlist.source != "YOUTUBE") return
         viewModelScope.launch {
             val result = metadataFetcher.fetchMetadata(playlist.url)
             result.fold(
@@ -169,21 +190,25 @@ class PlaylistViewModel @Inject constructor(
 
     fun forceRefreshPlaylist(playlist: Playlist) {
         viewModelScope.launch {
-            // Clear memory cache so the service will pull fresh tracks next time
-            metadataFetcher.clearTrackCache(playlist.url)
-            
-            // Re-fetch metadata
-            val result = metadataFetcher.fetchMetadata(playlist.url)
-            result.fold(
-                onSuccess = { metadata ->
-                    // ONLY update track count and duration, DO NOT touch custom titles/images
-                    repository.updatePlaylist(playlist.copy(
-                        trackCount = metadata.trackCount ?: playlist.trackCount,
-                        duration = metadata.duration ?: playlist.duration
-                    ))
-                },
-                onFailure = { /* keep existing data */ }
-            )
+            if (playlist.source == "YOUTUBE") {
+                // Clear both memory cache and DB cache
+                metadataFetcher.clearTrackCache(playlist.url)
+                repository.deleteTracksForPlaylist(playlist.id)
+                
+                // Re-fetch metadata
+                val result = metadataFetcher.fetchMetadata(playlist.url)
+                result.fold(
+                    onSuccess = { metadata ->
+                        // ONLY update track count and duration, DO NOT touch custom titles/images
+                        repository.updatePlaylist(playlist.copy(
+                            trackCount = metadata.trackCount ?: playlist.trackCount,
+                            duration = metadata.duration ?: playlist.duration
+                        ))
+                    },
+                    onFailure = { /* keep existing data */ }
+                )
+            }
+            // For Jellyfin playlists, the refresh happens on next load from server
         }
     }
 

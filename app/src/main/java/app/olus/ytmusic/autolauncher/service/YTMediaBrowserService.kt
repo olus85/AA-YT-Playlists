@@ -18,8 +18,11 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
 import app.olus.ytmusic.autolauncher.R
+import app.olus.ytmusic.autolauncher.data.repository.JellyfinItem
+import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
+import app.olus.ytmusic.autolauncher.data.repository.Track
 import app.olus.ytmusic.autolauncher.util.AALogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +36,7 @@ import javax.inject.Inject
 
 private const val TAG = "YTMediaBrowserService"
 private const val ROOT_ID = "root"
+private const val FOLDER_PLAYLISTS = "folder_playlists"
 private const val NOTIFICATION_CHANNEL_ID = "yt_auto_proxy_channel"
 private const val FOREGROUND_NOTIFICATION_ID = 42
 
@@ -66,6 +70,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
     @Inject lateinit var repository: PlaylistRepository
     @Inject lateinit var metadataFetcher: MetadataFetcher
     @Inject lateinit var mediaSyncManager: MediaSyncManager
+    @Inject lateinit var jellyfinRepository: JellyfinRepository
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
@@ -74,6 +79,8 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     /** Timestamp of last launch; state-sync suppressed until elapsed > LAUNCH_SUPPRESS_DURATION_MS */
     private val lastLaunchTimestamp = AtomicLong(0L)
+
+    private lateinit var jellyfinNativePlayer: JellyfinExoPlayerManager
 
     private var lastLoadedBitmapUri: String? = null
     private var lastLoadedBitmap: android.graphics.Bitmap? = null
@@ -96,6 +103,27 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             isActive = true
         }
         sessionToken = mediaSession.sessionToken
+
+        jellyfinNativePlayer = JellyfinExoPlayerManager(
+            context = this,
+            jellyfinRepository = jellyfinRepository,
+            mediaSyncManager = mediaSyncManager,
+            onPlaybackStateChange = { isPlaying ->
+                if (isPlaying) {
+                    val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_launcher_foreground)
+                        .setContentTitle("Wiedergabe aktiv")
+                        .setContentText("Jellyfin")
+                        .setStyle(androidx.media.app.NotificationCompat.MediaStyle().setMediaSession(mediaSession.sessionToken))
+                        .setPriority(NotificationCompat.PRIORITY_LOW)
+                        .build()
+                    startForeground(FOREGROUND_NOTIFICATION_ID, notification)
+                } else {
+                    stopForeground(false) // Don't remove notification immediately to allow resume
+                }
+            }
+        ).apply { initialize() }
+
         startProxySync()
     }
 
@@ -103,6 +131,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         super.onDestroy()
         AALogger.forceLog(TAG, "onDestroy")
         job.cancel()
+        jellyfinNativePlayer.release()
         mediaSession.isActive = false
         mediaSession.release()
     }
@@ -128,10 +157,30 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
     ) {
         AALogger.forceLog(TAG, "onLoadChildren called for parentId: $parentId")
         when {
-            parentId == ROOT_ID -> loadPlaylists(result)
+            parentId == ROOT_ID -> loadRootFolder(result)
+            parentId == FOLDER_PLAYLISTS -> loadPlaylists(result)
             parentId.startsWith("playlist_") -> loadTracks(parentId, result)
             else -> result.sendResult(mutableListOf())
         }
+    }
+
+    /**
+     * Returns a single virtual folder "Playlisten" as the only root item.
+     * This forces Android Auto to render it as a single tab/entry, and clicking
+     * it will show the actual playlists as a proper list with thumbnails.
+     */
+    private fun loadRootFolder(result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
+        val folderDesc = MediaDescriptionCompat.Builder()
+            .setMediaId(FOLDER_PLAYLISTS)
+            .setTitle("Playlisten")
+            .setSubtitle("Deine Musik")
+            .build()
+
+        val folderItem = MediaBrowserCompat.MediaItem(
+            folderDesc,
+            MediaBrowserCompat.MediaItem.FLAG_BROWSABLE
+        )
+        result.sendResult(mutableListOf(folderItem))
     }
 
     private fun loadPlaylists(result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
@@ -174,7 +223,36 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     result.sendResult(mutableListOf()); return@launch
                 }
 
-                AALogger.forceLog(TAG, "Fetching tracks for '${playlist.title}' (timeout: 10s)")
+                if (playlist.source == "JELLYFIN") {
+                    loadJellyfinTracks(playlist, result)
+                    return@launch
+                }
+
+                // ── Offline-first: Try DB cache first ──
+                val cachedTracks = repository.getCachedTracks(id)
+                if (cachedTracks.isNotEmpty()) {
+                    AALogger.forceLog(TAG, "Serving ${cachedTracks.size} cached tracks for '${playlist.title}'")
+                    result.sendResult(buildTrackItems(playlist, cachedTracks))
+
+                    // Refresh in background (don't block the UI)
+                    scope.launch {
+                        try {
+                            val freshResult = withTimeoutOrNull(15_000L) {
+                                metadataFetcher.fetchTracks(playlist.url)
+                            }
+                            freshResult?.getOrNull()?.let { freshTracks ->
+                                repository.saveTracks(id, freshTracks)
+                                AALogger.log(TAG, "Background refresh: saved ${freshTracks.size} tracks for '${playlist.title}'")
+                            }
+                        } catch (e: Exception) {
+                            AALogger.log(TAG, "Background refresh failed: ${e.message}")
+                        }
+                    }
+                    return@launch
+                }
+
+                // ── No cache: fetch from network ──
+                AALogger.forceLog(TAG, "No cache. Fetching tracks for '${playlist.title}' (timeout: 10s)")
                 val fetchResult = withTimeoutOrNull(10_000L) {
                     metadataFetcher.fetchTracks(playlist.url)
                 }
@@ -197,31 +275,9 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                 fetchResult.fold(
                     onSuccess = { tracks ->
                         AALogger.forceLog(TAG, "Loaded ${tracks.size} tracks for '${playlist.title}'")
-                        val items = mutableListOf<MediaBrowserCompat.MediaItem>()
-
-                        // First item: Shuffle play action
-                        items.add(MediaBrowserCompat.MediaItem(
-                            MediaDescriptionCompat.Builder()
-                                .setMediaId("shuffle_${playlist.id}")
-                                .setTitle("▶ Shuffle abspielen")
-                                .setSubtitle("${tracks.size} Songs zufällig abspielen")
-                                .build(),
-                            MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
-                        ))
-
-                        // Track items
-                        tracks.forEach { track ->
-                            items.add(MediaBrowserCompat.MediaItem(
-                                MediaDescriptionCompat.Builder()
-                                    .setMediaId("track_${playlist.id}_${track.videoId}")
-                                    .setTitle(track.title)
-                                    .setSubtitle(track.author)
-                                    .setIconUri(Uri.parse("https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg"))
-                                    .build(),
-                                MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
-                            ))
-                        }
-                        result.sendResult(items)
+                        // Save to DB for next time
+                        repository.saveTracks(id, tracks)
+                        result.sendResult(buildTrackItems(playlist, tracks))
                     },
                     onFailure = { e ->
                         AALogger.logError(TAG, "Failed to fetch tracks", e)
@@ -235,6 +291,81 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         }
     }
 
+    /**
+     * Builds the MediaItem list for a set of tracks (shared by cache and network paths).
+     */
+    private fun buildTrackItems(playlist: app.olus.ytmusic.autolauncher.domain.model.Playlist, tracks: List<Track>): MutableList<MediaBrowserCompat.MediaItem> {
+        val items = mutableListOf<MediaBrowserCompat.MediaItem>()
+
+        // First item: Shuffle play action
+        items.add(MediaBrowserCompat.MediaItem(
+            MediaDescriptionCompat.Builder()
+                .setMediaId("shuffle_${playlist.id}")
+                .setTitle("▶ Shuffle abspielen")
+                .setSubtitle("${tracks.size} Songs zufällig abspielen")
+                .build(),
+            MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+        ))
+
+        // Track items
+        tracks.forEach { track ->
+            items.add(MediaBrowserCompat.MediaItem(
+                MediaDescriptionCompat.Builder()
+                    .setMediaId("track_${playlist.id}_${track.videoId}")
+                    .setTitle(track.title)
+                    .setSubtitle(track.author)
+                    .setIconUri(Uri.parse("https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg"))
+                    .build(),
+                MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+            ))
+        }
+        return items
+    }
+
+    /**
+     * Loads tracks from Jellyfin server for a Jellyfin-sourced playlist.
+     */
+    private suspend fun loadJellyfinTracks(
+        playlist: app.olus.ytmusic.autolauncher.domain.model.Playlist,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>
+    ) {
+        try {
+            val itemId = playlist.externalId
+            if (itemId.isNullOrEmpty()) {
+                AALogger.logError(TAG, "Jellyfin playlist has no externalId")
+                result.sendResult(mutableListOf())
+                return
+            }
+
+            val jfTracks = jellyfinRepository.getPlaylistTracks(itemId)
+            if (jfTracks.isEmpty()) {
+                AALogger.log(TAG, "No Jellyfin tracks found for '${playlist.title}'")
+                result.sendResult(mutableListOf())
+                return
+            }
+
+            val items = mutableListOf<MediaBrowserCompat.MediaItem>()
+            jfTracks.forEach { jfTrack ->
+                val iconUri = jellyfinRepository.getImageUrl(jfTrack.id)
+                items.add(MediaBrowserCompat.MediaItem(
+                    MediaDescriptionCompat.Builder()
+                        .setMediaId("jftrack_${playlist.id}_${jfTrack.id}")
+                        .setTitle(jfTrack.name)
+                        .setSubtitle(jfTrack.artist)
+                        .apply { if (iconUri != null) setIconUri(Uri.parse(iconUri)) }
+                        .build(),
+                    MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+                ))
+            }
+
+            AALogger.forceLog(TAG, "Loaded ${jfTracks.size} Jellyfin tracks for '${playlist.title}'")
+            result.sendResult(items)
+        } catch (e: Exception) {
+            AALogger.logError(TAG, "Error loading Jellyfin tracks", e)
+            result.sendResult(mutableListOf())
+        }
+    }
+
     // ─── MediaSession Callback ──────────────────────────────────────────
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
@@ -244,6 +375,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             if (mediaId == null) return
             when {
                 mediaId.startsWith("shuffle_") -> handleShuffleClick(mediaId)
+                mediaId.startsWith("jftrack_") -> handleTrackClick(mediaId)
                 mediaId.startsWith("track_") -> handleTrackClick(mediaId)
                 else -> AALogger.log(TAG, "Unknown mediaId format: $mediaId")
             }
@@ -293,19 +425,34 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         scope.launch {
             val playlist = repository.getPlaylistById(id)
             if (playlist != null) {
-                val listId = Uri.parse(playlist.url).getQueryParameter("list")
-                if (listId != null) {
-                    val url = "https://music.youtube.com/watch?list=$listId&shuffle=1"
-                    AALogger.forceLog(TAG, "Launching shuffle: $url")
-                    launchYouTubeMusic(url)
+                if (playlist.source == "JELLYFIN") {
+                    val externalId = playlist.externalId ?: return@launch
+                    val tracks = jellyfinRepository.getPlaylistTracks(externalId)
+                    if (tracks.isEmpty()) return@launch
+                    mainHandler.post {
+                        jellyfinNativePlayer.playTracks(tracks, 0, true)
+                    }
                 } else {
-                    AALogger.logError(TAG, "No list ID in URL: ${playlist.url}")
+                    val listId = Uri.parse(playlist.url).getQueryParameter("list")
+                    if (listId != null) {
+                        val url = "https://music.youtube.com/watch?list=$listId&shuffle=1"
+                        AALogger.forceLog(TAG, "Launching shuffle: $url")
+                        launchYouTubeMusic(url)
+                    } else {
+                        AALogger.logError(TAG, "No list ID in URL: ${playlist.url}")
+                    }
                 }
             }
         }
     }
 
     private fun handleTrackClick(mediaId: String) {
+        // Check if it's a Jellyfin track
+        if (mediaId.startsWith("jftrack_")) {
+            handleJellyfinTrackClick(mediaId)
+            return
+        }
+
         val idStr = mediaId.removePrefix("track_")
         val sep = idStr.indexOf('_')
         if (sep == -1) return
@@ -324,6 +471,38 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             }
             AALogger.forceLog(TAG, "Launching track: $url")
             launchYouTubeMusic(url)
+        }
+    }
+
+    private fun handleJellyfinTrackClick(mediaId: String) {
+        val idStr = mediaId.removePrefix("jftrack_")
+        val sep = idStr.indexOf('_')
+        if (sep == -1) return
+        val playlistIdStr = idStr.substring(0, sep)
+        val trackItemId = idStr.substring(sep + 1)
+        val playlistId = playlistIdStr.toIntOrNull() ?: return
+
+        beginLaunch()
+
+        scope.launch {
+            try {
+                val playlist = repository.getPlaylistById(playlistId) ?: return@launch
+                val externalId = playlist.externalId ?: return@launch
+
+                val tracks = jellyfinRepository.getPlaylistTracks(externalId)
+                if (tracks.isEmpty()) {
+                    AALogger.logError(TAG, "No tracks found for Jellyfin playlist $externalId")
+                    return@launch
+                }
+
+                val startIndex = tracks.indexOfFirst { it.id == trackItemId }.takeIf { it >= 0 } ?: 0
+
+                mainHandler.post {
+                    jellyfinNativePlayer.playTracks(tracks, startIndex, false)
+                }
+            } catch (e: Exception) {
+                AALogger.logError(TAG, "Error playing Jellyfin track natively", e)
+            }
         }
     }
 
@@ -359,42 +538,77 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     private fun launchYouTubeMusic(url: String) {
         AALogger.forceLog(TAG, "launchYouTubeMusic: $url")
-        mainHandler.post {
-            // Promote to foreground service BEFORE startActivity()
-            // This grants the background activity start exemption on Android 10+
-            promoteToForeground()
-
-            var started = false
-            for (pkg in ytMusicPackages) {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        `package` = pkg
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        
+        scope.launch {
+            val controller = mediaSyncManager.activeController.value
+            if (controller != null && ytMusicPackages.contains(controller.packageName)) {
+                AALogger.log(TAG, "Trying background playFromUri...")
+                val currentId = mediaSyncManager.currentMetadata.value?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+                
+                mainHandler.post {
+                    controller.transportControls.playFromUri(Uri.parse(url), null)
+                }
+                
+                // Wait up to 2.5 seconds to see if YT Music reacts
+                val success = withTimeoutOrNull(2500L) {
+                    while(true) {
+                        val state = mediaSyncManager.currentPlaybackState.value?.state
+                        val metaId = mediaSyncManager.currentMetadata.value?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+                        if (metaId != currentId || state == android.media.session.PlaybackState.STATE_BUFFERING || state == android.media.session.PlaybackState.STATE_PLAYING) {
+                            return@withTimeoutOrNull true
+                        }
+                        kotlinx.coroutines.delay(100)
                     }
-                    startActivity(intent)
-                    AALogger.forceLog(TAG, "Successfully launched via: $pkg")
-                    started = true
-                    break
-                } catch (e: Exception) {
-                    AALogger.log(TAG, "Package $pkg not available: ${e.message}")
                 }
-            }
-            if (!started) {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                    AALogger.forceLog(TAG, "Launched via generic fallback")
-                } catch (e: Exception) {
-                    AALogger.logError(TAG, "All launch attempts failed", e)
+                
+                if (success == true) {
+                    AALogger.forceLog(TAG, "Background playFromUri successful!")
+                    return@launch
                 }
+                AALogger.forceLog(TAG, "Background launch timed out, trying Intent fallback.")
             }
-
-            // Demote back to background after keepalive period
-            mainHandler.postDelayed({
-                demoteFromForeground()
-            }, FOREGROUND_KEEPALIVE_MS)
+            
+            mainHandler.post {
+                performIntentLaunch(url)
+            }
         }
+    }
+
+    private fun performIntentLaunch(url: String) {
+        // Promote to foreground service BEFORE startActivity()
+        // This grants the background activity start exemption on Android 10+
+        promoteToForeground()
+
+        var started = false
+        for (pkg in ytMusicPackages) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    `package` = pkg
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                startActivity(intent)
+                AALogger.forceLog(TAG, "Successfully launched via: $pkg")
+                started = true
+                break
+            } catch (e: Exception) {
+                AALogger.log(TAG, "Package $pkg not available: ${e.message}")
+            }
+        }
+        if (!started) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                AALogger.forceLog(TAG, "Launched via generic fallback")
+            } catch (e: Exception) {
+                AALogger.logError(TAG, "All launch attempts failed", e)
+            }
+        }
+
+        // Demote back to background after keepalive period
+        mainHandler.postDelayed({
+            demoteFromForeground()
+        }, FOREGROUND_KEEPALIVE_MS)
     }
 
     // ─── Foreground Service Management ──────────────────────────────────

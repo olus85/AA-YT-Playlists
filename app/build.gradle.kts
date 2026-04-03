@@ -14,8 +14,8 @@ android {
         applicationId = "app.olus.ytmusic.autolauncher"
         minSdk = 23
         targetSdk = 35
-        versionCode = 10
-        versionName = "2.2.0"
+        versionCode = 11
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -78,6 +78,12 @@ dependencies {
 
     // Android Auto
     implementation("androidx.media:media:1.7.0")
+
+    // Security (EncryptedSharedPreferences for Jellyfin credentials)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Media3 (ExoPlayer for native playback)
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

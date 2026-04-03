@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0] - 2026-04-03
+
+### Added
+- **Native Jellyfin Playback**: Complete rewrite of the Jellyfin integration. Replaced external app launching with a native, high-performance `ExoPlayer` (Media3) integration. Jellyfin tracks now play directly within the app, supporting background playback and system media controls.
+- **Lyrics Cache (Room DB v5)**: Synchronized lyrics are now cached in a local database after the first successful retrieval. Loading lyrics for known tracks is now near-instant (< 50ms).
+- **Auto-Lyrics Foregrounding**: The app now automatically brings itself to the foreground and displays the synchronized lyrics dialog whenever a track changes, ensuring a hands-free experience.
+- **Screen Keep-Awake**: The lyrics dialog now prevents mobile screen timeout while open.
+- **NetEase Lyrics Priority**: Re-ordered lyrics provider fallback chain to prioritize NetEase Cloud Music for higher accuracy and reliability.
+
+### Fixed
+- **Jellyfin Thumbnails**: Resolved missing cover art for Jellyfin playlists and tracks by correctly passing authentication tokens in image fetch URLs.
+- **Plain-Text Auto-Scroll**: Removed unreliable auto-scrolling for lyrics without timestamps (e.g., Genius) to keep them static and readable.
+
+## [2.3.0] - 2026-04-03
+
+### Added
+- **Jellyfin Server Integration**: Full integration with self-hosted Jellyfin music servers. Authenticate via the new Settings dialog, browse albums and playlists from your library, and import them directly into the app. Playback is launched via the Jellyfin Android app (intent-based).
+- **Jellyfin Browse Dialog**: A dedicated album/playlist browser with cover art thumbnails, artist names, and type badges (Album/Playlist) for easy importing.
+- **Track Caching (Room DB)**: Playlist tracks are now persistently cached in the local database. Android Auto serves cached tracks instantly on startup, while refreshing them in the background — dramatically improving load times and enabling offline access to track lists.
+- **LRCLIB Search (Fuzzy Lyrics)**: Added the LRCLIB Search API (`/api/search`) as a second-tier lyrics provider. When the exact match fails, the fuzzy search often finds synced lyrics under alternate titles or transliterations.
+- **Megalobiz Lyrics Scraper**: Added Megalobiz as a third-tier synced lyrics source, scraping LRC files from their web search results.
+- **NetEase Cloud Music Lyrics**: Added NetEase's internal API as a fourth-tier synced lyrics provider, searching and retrieving LRC data for Chinese and international music catalogs.
+- **Settings Dialog**: Replaced the standalone Diagnostics dialog with a combined Settings screen featuring Jellyfin server configuration (login/disconnect/connection test) and the existing debug log viewer.
+- **Source Badges**: Playlist items now display a subtle "JF" badge for Jellyfin-sourced playlists, making it easy to distinguish them from YouTube playlists.
+
+### Changed
+- **Android Auto Root Hierarchy**: Restructured the MediaBrowser tree to always return a single virtual folder ("Playlisten") as the root item. This forces Android Auto to render playlists as a proper list with thumbnails, eliminating the unwanted tab-bar layout that appeared with ≤4 playlists.
+- **Lyrics Fallback Chain**: Expanded from 3 providers to 5: `lrclib/get → lrclib/search → Megalobiz → NetEase → Genius`. Musixmatch has been completely removed due to persistent API failures.
+- **Database Schema**: Upgraded from v3 to v4 with a combined migration adding the `tracks` table and `source`/`externalId` columns to `playlists`.
+
+### Fixed
+- **TopAppBar Scroll Behavior**: Fixed the annoying bounce/collapse effect on the playlist screen when fewer than ~6 playlists were present. The app bar now stays pinned and stable regardless of list length.
+
+### Removed
+- **Musixmatch Provider**: Completely removed the broken Musixmatch API integration (token acquisition, encrypted lyrics fetching) in favor of more reliable open alternatives.
+
 ## [2.2.0] - 2026-04-03
 
 ### Added

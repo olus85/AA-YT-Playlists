@@ -1,18 +1,19 @@
 # AA YT Playlists
 
-AA YT Playlists is an Android Auto application that allows users to manage and play YouTube Music playlists directly from their car's headunit. It acts as a transparent **Media Session Proxy** between Android Auto and YouTube Music, providing native playback controls, real-time metadata display, and seamless track/playlist launching.
+AA YT Playlists is an Android Auto application that allows users to manage and play YouTube Music playlists — and **Jellyfin music libraries** — directly from their car's headunit. It acts as a transparent **Media Session Proxy** between Android Auto and YouTube Music, providing native playback controls, real-time metadata display, and seamless track/playlist launching.
 
 ## Features
 
 - **Native Media Session Proxy**: Mirrors YouTube Music's playback state (title, artist, album art, progress) directly onto Android Auto's media interface in real time.
 - **Native Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no legacy hacks.
+- **Jellyfin Server Integration**: Connect your self-hosted Jellyfin server, browse albums and playlists, and import them directly into the app. Playback is launched via the Jellyfin Android app.
 - **Full-Screen Lyrics UI**: A stunning, full-screen transparent lyrics dialog with blurred album art and **automatic scrolling** for non-synced tracks.
-- **Triple-Tier Lyrics Support**: Synchronized lyrics via `lrclib`, `Musixmatch`, and plain-text fallback via the **Genius API**.
+- **5-Tier Lyrics Support**: Synchronized lyrics via `lrclib` (exact + fuzzy search), `Megalobiz` scraping, `NetEase Cloud Music`, and plain-text fallback via the **Genius API**.
 - **Shuffle Play**: One-tap shuffle-play for entire playlists, directly from the car's media UI.
 - **Transport Control Forwarding**: Play, Pause, Skip, Seek from the steering wheel or headunit are forwarded to YouTube Music.
 - **Background Playback Launch**: Starts YouTube Music playback even when the app isn't in the foreground, using Foreground Service promotion and `SYSTEM_ALERT_WINDOW` permission.
 - **Metadata Fetching with Retry Logic**: Pulls playlist details (thumbnails, track counts, duration) dynamically with exponential backoff for extreme reliability.
-- **Offline Caching**: Caches images and data using Coil and Room for reliable performance even in poor network conditions.
+- **Offline Track Caching**: Track lists are cached in the Room database and served instantly on Android Auto, with silent background refresh for up-to-date playlists.
 - **ReVanced Support**: Compatible with `app.rvx.android.apps.youtube.music`, `app.revanced.android.apps.youtube.music`, and the official `com.google.android.apps.youtube.music`.
 
 ## Architecture
@@ -21,8 +22,14 @@ AA YT Playlists is an Android Auto application that allows users to manage and p
 Android Auto Headunit
     │
     ├── MediaBrowser ──► YTMediaBrowserService
-    │                        │  (hierarchical: root → playlists → tracks)
+    │                        │  (root → "Playlisten" folder → playlists → tracks)
     │                        │
+    │                        ├── YouTube playlists  → MetadataFetcher (Invidious)
+    │                        │                        + Room DB cache (offline-first)
+    │                        │
+    │                        └── Jellyfin playlists → JellyfinRepository
+    │                                                  (REST API → Jellyfin App intent)
+    │
     │   ◄── MediaSession ────┘  (mirrors YT Music state via proxy sync)
     │
     └── Transport Controls ──► MediaSyncManager ──► YT Music MediaController

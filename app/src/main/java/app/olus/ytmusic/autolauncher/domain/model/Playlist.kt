@@ -7,5 +7,7 @@ data class Playlist(
     val imageUrl: String,
     val position: Int = 0,
     val trackCount: String? = null,
-    val duration: String? = null
+    val duration: String? = null,
+    val source: String = "YOUTUBE",
+    val externalId: String? = null
 )

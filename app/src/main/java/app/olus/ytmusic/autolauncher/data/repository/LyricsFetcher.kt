@@ -3,6 +3,7 @@ package app.olus.ytmusic.autolauncher.data.repository
 import app.olus.ytmusic.autolauncher.util.AALogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.io.BufferedReader
@@ -13,6 +14,7 @@ import java.net.URLEncoder
 import java.util.regex.Pattern
 import javax.inject.Inject
 import javax.inject.Singleton
+import app.olus.ytmusic.autolauncher.data.local.entity.LyricsEntity
 
 data class LyricLine(val timestampMs: Long, val text: String)
 
@@ -23,29 +25,129 @@ sealed class LyricsState {
     data class Error(val message: String) : LyricsState()
 }
 
+
+
 @Singleton
-class LyricsFetcher @Inject constructor() {
+class LyricsFetcher @Inject constructor(
+    private val lyricsDao: app.olus.ytmusic.autolauncher.data.local.dao.LyricsDao
+) {
 
     private val baseApiUrl = "https://lrclib.net/api/get"
+    private val searchApiUrl = "https://lrclib.net/api/search"
     private val TAG = "LyricsFetcher"
 
     companion object {
         // Genius API credentials
-        const val GENIUS_CLIENT_ID = "2o3DcfgPEO3esYG5Zvywv5o7TNh1xhE0nqK0TLOXChHrkC1SEUAeID6VBL0kT3VP"
-        const val GENIUS_CLIENT_SECRET = "eymPtpHXby0yVLTpED9pDmTPmXU8e7tRrSvg6EOupOs1fckPTsc6oV0SBX5qlJlSKpeSIPGiRNBietllC0vOBg"
         const val GENIUS_ACCESS_TOKEN = "e2IjjnIVsdoFj5k3wb5A8US_r6sPdgM9QVbW9P5Rz2I85Rp7ic_FE4yCiERkcCgm"
     }
 
+    /**
+     * Main entry point. Fallback chain:
+     * Cache -> NetEase -> lrclib/get → lrclib/search → Megalobiz → Genius (plain-text)
+     */
     suspend fun fetchLyrics(trackName: String, artistName: String, durationMs: Long?): LyricsState = withContext(Dispatchers.IO) {
         try {
             val cleanedTrackName = cleanTrackTitle(trackName)
             val cleanedArtistName = cleanArtistName(artistName)
+            val cacheId = "$cleanedArtistName-$cleanedTrackName"
 
             AALogger.log(TAG, "Fetching lyrics for '$cleanedTrackName' by '$cleanedArtistName' (${durationMs?.div(1000)}s)")
 
+            // ── Step 0: Check Local Cache ──
+            try {
+                val cached = lyricsDao.getLyrics(cacheId)
+                if (cached != null) {
+                    AALogger.forceLog(TAG, "Cache hit for '$cacheId'!")
+                    val parsed = parseLrc(cached.lyricsContent)
+                    if (parsed.isNotEmpty()) {
+                        return@withContext LyricsState.Success(parsed, isSynced = cached.isSynced)
+                    }
+                }
+            } catch (e: Exception) {
+                AALogger.logError(TAG, "Cache read failed", e)
+            }
+
+            // ── Step 1: NetEase Cloud Music ──
+            AALogger.log(TAG, "Trying NetEase...")
+            var finalResult: LyricsState.Success? = null
+            
+            val netEaseResult = fetchFromNetEase(cleanedTrackName, cleanedArtistName)
+            if (netEaseResult is LyricsState.Success) {
+                finalResult = netEaseResult
+            } else {
+                // ── Step 2: lrclib exact GET ──
+                AALogger.log(TAG, "NetEase miss. Trying lrclib/get...")
+                val lrclibGetResult = fetchFromLrclibGet(cleanedTrackName, cleanedArtistName, durationMs)
+                if (lrclibGetResult is LyricsState.Success) {
+                    finalResult = lrclibGetResult
+                } else {
+                    // ── Step 3: lrclib search (fuzzy) ──
+                    AALogger.log(TAG, "lrclib/get miss. Trying lrclib/search...")
+                    val lrclibSearchResult = fetchFromLrclibSearch(cleanedTrackName, cleanedArtistName)
+                    if (lrclibSearchResult is LyricsState.Success) {
+                        finalResult = lrclibSearchResult
+                    } else {
+                        // ── Step 4: Megalobiz ──
+                        AALogger.log(TAG, "lrclib/search miss. Trying Megalobiz...")
+                        val megalobizResult = fetchFromMegalobiz(cleanedTrackName, cleanedArtistName)
+                        if (megalobizResult is LyricsState.Success) {
+                            finalResult = megalobizResult
+                        } else {
+                            // ── Step 5: Genius (Plain-text fallback) ──
+                            AALogger.log(TAG, "Megalobiz miss. Fallback to Genius...")
+                            val geniusResult = fetchFromGenius(cleanedTrackName, cleanedArtistName)
+                            if (geniusResult is LyricsState.Success) {
+                                finalResult = geniusResult
+                            } else {
+                                return@withContext LyricsState.Empty
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Reconstruct LRC string from parsed LyricLines and save to cache if it's synced
+            val result = finalResult
+            if (result != null && result.isSynced) {
+                val lrcString = result.lyrics.joinToString("\n") { line ->
+                    val ms = line.timestampMs
+                    val m = ms / 60000
+                    val s = (ms % 60000) / 1000
+                    val msPart = (ms % 1000) / 10
+                    String.format("[%02d:%02d.%02d]%s", m, s, msPart, line.text)
+                }
+                
+                try {
+                    lyricsDao.insertLyrics(LyricsEntity(
+                        id = cacheId,
+                        trackName = cleanedTrackName,
+                        artistName = cleanedArtistName,
+                        lyricsContent = lrcString,
+                        isSynced = true
+                    ))
+                    AALogger.log(TAG, "Saved lyrics to cache for '$cacheId'")
+                } catch (e: Exception) {
+                    AALogger.logError(TAG, "Failed to save lyrics to cache", e)
+                }
+            }
+            
+            return@withContext finalResult ?: LyricsState.Empty
+
+        } catch (e: Exception) {
+            AALogger.logError(TAG, "Exception in top-level fetchLyrics", e)
+            LyricsState.Empty
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Provider 1: lrclib exact GET
+    // ──────────────────────────────────────────────────────────────
+
+    private fun fetchFromLrclibGet(trackName: String, artistName: String, durationMs: Long?): LyricsState? {
+        return try {
             val queryBuilder = StringBuilder()
-            queryBuilder.append("?track_name=").append(URLEncoder.encode(cleanedTrackName, "UTF-8"))
-            queryBuilder.append("&artist_name=").append(URLEncoder.encode(cleanedArtistName, "UTF-8"))
+            queryBuilder.append("?track_name=").append(URLEncoder.encode(trackName, "UTF-8"))
+            queryBuilder.append("&artist_name=").append(URLEncoder.encode(artistName, "UTF-8"))
             if (durationMs != null && durationMs > 0) {
                 queryBuilder.append("&duration=").append(durationMs / 1000)
             }
@@ -53,17 +155,14 @@ class LyricsFetcher @Inject constructor() {
             val targetUrl = URL(baseApiUrl + queryBuilder.toString())
             val connection = targetUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "AA-YT-Playlists-App") // Good practice for lrclib
+            connection.setRequestProperty("User-Agent", "AA-YT-Playlists-App")
             connection.connectTimeout = 5000
             connection.readTimeout = 5000
 
             val responseCode = connection.responseCode
-            if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
-                AALogger.log(TAG, "No lyrics found for track (404) on lrclib. Falling back to Musixmatch.")
-                return@withContext fetchFromMusixmatch(cleanedTrackName, cleanedArtistName)
-            } else if (responseCode != HttpURLConnection.HTTP_OK) {
-                AALogger.log(TAG, "Failed to fetch lyrics, HTTP $responseCode")
-                return@withContext fetchFromMusixmatch(cleanedTrackName, cleanedArtistName)
+            if (responseCode == HttpURLConnection.HTTP_NOT_FOUND || responseCode != HttpURLConnection.HTTP_OK) {
+                connection.disconnect()
+                return null
             }
 
             val reader = BufferedReader(InputStreamReader(connection.inputStream))
@@ -76,92 +175,213 @@ class LyricsFetcher @Inject constructor() {
                 val syncedLrc = json.getString("syncedLyrics")
                 val parsed = parseLrc(syncedLrc)
                 if (parsed.isNotEmpty()) {
-                    return@withContext LyricsState.Success(parsed, isSynced = true)
+                    AALogger.log(TAG, "Successfully fetched synced lyrics from lrclib/get")
+                    return LyricsState.Success(parsed, isSynced = true)
                 }
             }
-
-            // Fallback to Musixmatch if no synced lyrics found
-            AALogger.log(TAG, "lrclib missing synced lyrics. Falling back to Musixmatch.")
-            fetchFromMusixmatch(cleanedTrackName, cleanedArtistName)
-
+            null // No synced lyrics found
         } catch (e: Exception) {
-            AALogger.log(TAG, "Exception fetching lyrics: ${e.message}. Falling back.")
-            fetchFromMusixmatch(cleanTrackTitle(trackName), cleanArtistName(artistName))
+            AALogger.log(TAG, "lrclib/get error: ${e.message}")
+            null
         }
     }
 
-    private var mxmToken: String? = null
+    // ──────────────────────────────────────────────────────────────
+    // Provider 2: lrclib search (fuzzy)
+    // ──────────────────────────────────────────────────────────────
 
-    private suspend fun fetchFromMusixmatch(trackName: String, artistName: String): LyricsState {
+    private fun fetchFromLrclibSearch(trackName: String, artistName: String): LyricsState? {
         return try {
-            if (mxmToken == null) {
-                val tokenUrl = URL("https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0")
-                val tokenConn = tokenUrl.openConnection() as HttpURLConnection
-                tokenConn.requestMethod = "GET"
-                tokenConn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                val tokenReader = BufferedReader(InputStreamReader(tokenConn.inputStream))
-                val tokenResponse = tokenReader.readText()
-                tokenReader.close()
-                tokenConn.disconnect()
-                
-                val tokenJson = JSONObject(tokenResponse)
-                val body = tokenJson.optJSONObject("message")?.optJSONObject("body")
-                mxmToken = body?.optString("user_token")
-            }
-
-            if (mxmToken.isNullOrEmpty()) {
-                AALogger.log(TAG, "Musixmatch token empty. Falling back to Genius.")
-                return fetchFromGenius(trackName, artistName)
-            }
-
-            val queryBuilder = StringBuilder()
-            queryBuilder.append("https://apic-desktop.musixmatch.com/ws/1.1/macro.subtitles.get?format=json")
-            queryBuilder.append("&q_track=").append(URLEncoder.encode(trackName, "UTF-8"))
-            queryBuilder.append("&q_artist=").append(URLEncoder.encode(artistName, "UTF-8"))
-            queryBuilder.append("&user_token=").append(mxmToken)
-            queryBuilder.append("&app_id=web-desktop-app-v1.0")
-
-            val targetUrl = URL(queryBuilder.toString())
+            val query = URLEncoder.encode("$artistName $trackName", "UTF-8")
+            val targetUrl = URL("$searchApiUrl?q=$query")
             val connection = targetUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-            
+            connection.setRequestProperty("User-Agent", "AA-YT-Playlists-App")
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                connection.disconnect()
+                return null
+            }
+
             val reader = BufferedReader(InputStreamReader(connection.inputStream))
             val responseText = reader.readText()
             reader.close()
             connection.disconnect()
 
-            val json = JSONObject(responseText)
-            val msgBody = json.optJSONObject("message")?.optJSONObject("body")
-            val macroCalls = msgBody?.optJSONObject("macro_calls")
-            val subsGet = macroCalls?.optJSONObject("track.subtitles.get")
-            val subsBody = subsGet?.optJSONObject("message")?.optJSONObject("body")
-            val subtitleList = subsBody?.optJSONArray("subtitle_list")
-            
-            if (subtitleList != null && subtitleList.length() > 0) {
-                val subtitleObj = subtitleList.optJSONObject(0)?.optJSONObject("subtitle")
-                val lrcText = subtitleObj?.optString("subtitle_body")
-                if (!lrcText.isNullOrEmpty()) {
-                    val parsed = parseLrc(lrcText)
+            val jsonArray = JSONArray(responseText)
+            if (jsonArray.length() == 0) return null
+
+            // Find the best match that has synced lyrics
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.optJSONObject(i) ?: continue
+                val syncedLyrics = item.optString("syncedLyrics", "")
+                if (syncedLyrics.isNotEmpty()) {
+                    val parsed = parseLrc(syncedLyrics)
                     if (parsed.isNotEmpty()) {
-                        AALogger.log(TAG, "Successfully fetched from Musixmatch")
+                        val matchTitle = item.optString("trackName", "")
+                        val matchArtist = item.optString("artistName", "")
+                        AALogger.log(TAG, "lrclib/search match: '$matchTitle' by '$matchArtist'")
                         return LyricsState.Success(parsed, isSynced = true)
                     }
                 }
             }
-            AALogger.log(TAG, "Musixmatch returned no lyrics. Falling back to Genius.")
-            fetchFromGenius(trackName, artistName)
+            null
         } catch (e: Exception) {
-            AALogger.log(TAG, "Musixmatch fallback failed: ${e.message}. Trying Genius.")
-            fetchFromGenius(trackName, artistName)
+            AALogger.log(TAG, "lrclib/search error: ${e.message}")
+            null
         }
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Genius API Fallback
+    // Provider 3: Megalobiz scraper
     // ──────────────────────────────────────────────────────────────
 
-    private suspend fun fetchFromGenius(trackName: String, artistName: String): LyricsState {
+    private fun fetchFromMegalobiz(trackName: String, artistName: String): LyricsState? {
+        return try {
+            val query = URLEncoder.encode("$artistName $trackName", "UTF-8")
+            val searchUrl = "https://www.megalobiz.com/search/all?qry=$query"
+
+            val doc = Jsoup.connect(searchUrl)
+                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .timeout(8000)
+                .get()
+
+            // Find LRC result links
+            val resultLinks = doc.select("a.entity_name[href*=/lrc/maker/]")
+            if (resultLinks.isEmpty()) {
+                AALogger.log(TAG, "Megalobiz: No results found")
+                return null
+            }
+
+            // Try the first few results
+            for (i in 0 until minOf(3, resultLinks.size)) {
+                val link = resultLinks[i]
+                val href = link.attr("abs:href")
+                if (href.isEmpty()) continue
+
+                try {
+                    val detailDoc = Jsoup.connect(href)
+                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .timeout(8000)
+                        .get()
+
+                    // The LRC content is inside a textarea or span with class "lyrics"
+                    val lrcContent = detailDoc.select("span.lyrics").text()
+                        .ifEmpty { detailDoc.select("textarea#lrc_content").text() }
+                        .ifEmpty { detailDoc.select("div.lyrics_details span").text() }
+
+                    if (lrcContent.isNotEmpty() && lrcContent.contains("[")) {
+                        val parsed = parseLrc(lrcContent)
+                        if (parsed.isNotEmpty()) {
+                            AALogger.log(TAG, "Successfully fetched ${parsed.size} synced lines from Megalobiz")
+                            return LyricsState.Success(parsed, isSynced = true)
+                        }
+                    }
+                } catch (e: Exception) {
+                    AALogger.log(TAG, "Megalobiz detail page error: ${e.message}")
+                }
+            }
+            null
+        } catch (e: Exception) {
+            AALogger.log(TAG, "Megalobiz scraper error: ${e.message}")
+            null
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Provider 4: NetEase Cloud Music (reverse-engineered)
+    // ──────────────────────────────────────────────────────────────
+
+    private fun fetchFromNetEase(trackName: String, artistName: String): LyricsState? {
+        return try {
+            // Step 1: Search for the song
+            val query = URLEncoder.encode("$artistName $trackName", "UTF-8")
+            val searchUrl = URL("https://music.163.com/api/search/get/?s=$query&type=1&limit=5")
+            val searchConn = searchUrl.openConnection() as HttpURLConnection
+            searchConn.requestMethod = "POST"
+            searchConn.setRequestProperty("User-Agent", "Mozilla/5.0")
+            searchConn.setRequestProperty("Referer", "https://music.163.com/")
+            searchConn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            searchConn.connectTimeout = 8000
+            searchConn.readTimeout = 8000
+            searchConn.doOutput = true
+            // Send empty body for POST
+            searchConn.outputStream.write(ByteArray(0))
+            searchConn.outputStream.flush()
+
+            if (searchConn.responseCode != HttpURLConnection.HTTP_OK) {
+                AALogger.log(TAG, "NetEase search HTTP ${searchConn.responseCode}")
+                searchConn.disconnect()
+                return null
+            }
+
+            val searchReader = BufferedReader(InputStreamReader(searchConn.inputStream))
+            val searchResponse = searchReader.readText()
+            searchReader.close()
+            searchConn.disconnect()
+
+            val searchJson = JSONObject(searchResponse)
+            val songs = searchJson.optJSONObject("result")?.optJSONArray("songs")
+            if (songs == null || songs.length() == 0) {
+                AALogger.log(TAG, "NetEase: No search results")
+                return null
+            }
+
+            // Try each song result for synced lyrics
+            for (i in 0 until minOf(3, songs.length())) {
+                val song = songs.optJSONObject(i) ?: continue
+                val songId = song.optLong("id", 0)
+                if (songId == 0L) continue
+
+                try {
+                    // Step 2: Fetch lyrics for this song
+                    val lyricsUrl = URL("https://music.163.com/api/song/lyric?id=$songId&lv=1&tv=-1")
+                    val lyricsConn = lyricsUrl.openConnection() as HttpURLConnection
+                    lyricsConn.requestMethod = "GET"
+                    lyricsConn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    lyricsConn.setRequestProperty("Referer", "https://music.163.com/")
+                    lyricsConn.connectTimeout = 5000
+                    lyricsConn.readTimeout = 5000
+
+                    if (lyricsConn.responseCode != HttpURLConnection.HTTP_OK) {
+                        lyricsConn.disconnect()
+                        continue
+                    }
+
+                    val lyricsReader = BufferedReader(InputStreamReader(lyricsConn.inputStream))
+                    val lyricsResponse = lyricsReader.readText()
+                    lyricsReader.close()
+                    lyricsConn.disconnect()
+
+                    val lyricsJson = JSONObject(lyricsResponse)
+                    val lrcText = lyricsJson.optJSONObject("lrc")?.optString("lyric", "")
+
+                    if (!lrcText.isNullOrEmpty() && lrcText.contains("[")) {
+                        val parsed = parseLrc(lrcText)
+                        if (parsed.isNotEmpty()) {
+                            val songName = song.optString("name", "")
+                            AALogger.log(TAG, "NetEase: Found synced lyrics for '$songName' (${parsed.size} lines)")
+                            return LyricsState.Success(parsed, isSynced = true)
+                        }
+                    }
+                } catch (e: Exception) {
+                    AALogger.log(TAG, "NetEase lyrics fetch error for song $songId: ${e.message}")
+                }
+            }
+            null
+        } catch (e: Exception) {
+            AALogger.log(TAG, "NetEase provider error: ${e.message}")
+            null
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Provider 5: Genius API (plain-text fallback)
+    // ──────────────────────────────────────────────────────────────
+
+    private fun fetchFromGenius(trackName: String, artistName: String): LyricsState {
         return try {
             AALogger.log(TAG, "Trying Genius API for '$trackName' by '$artistName'")
 
@@ -249,6 +469,10 @@ class LyricsFetcher @Inject constructor() {
             LyricsState.Empty
         }
     }
+
+    // ──────────────────────────────────────────────────────────────
+    // Utilities
+    // ──────────────────────────────────────────────────────────────
 
     /**
      * Cleans common YouTube Music artifacts from the title to improve likelihood of matches.
