@@ -3,9 +3,11 @@ package app.olus.ytmusic.autolauncher.data.repository
 import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
 
 private const val TAG = "MetadataFetcher"
@@ -38,6 +40,13 @@ class MetadataFetcher {
 
     // In-memory cache for tracks
     private val trackCache = android.util.LruCache<String, List<Track>>(20)
+
+    // Retry configuration
+    companion object {
+        private const val MAX_RETRIES = 2
+        private const val INITIAL_BACKOFF_MS = 500L
+        private const val CONNECT_TIMEOUT_MS = 10000
+    }
 
     fun clearTrackCache(url: String) {
         val playlistId = extractPlaylistId(url)
@@ -92,6 +101,47 @@ class MetadataFetcher {
             dynamicInstances = fallbackInstances
         }
         return dynamicInstances
+    }
+
+    /**
+     * Determines if an error is transient (worth retrying) vs permanent.
+     */
+    private fun isTransientError(e: Exception): Boolean {
+        return when (e) {
+            is SocketTimeoutException -> true
+            is org.jsoup.HttpStatusException -> e.statusCode in 500..599
+            else -> e.message?.contains("timeout", ignoreCase = true) == true ||
+                    e.message?.contains("connection", ignoreCase = true) == true
+        }
+    }
+
+    /**
+     * Executes an HTTP request with exponential backoff retry on transient errors.
+     * Returns null if all retries are exhausted.
+     */
+    private suspend fun <T> executeWithRetry(
+        instance: String,
+        operation: () -> T
+    ): T? {
+        var lastException: Exception? = null
+        for (attempt in 0..MAX_RETRIES) {
+            try {
+                if (attempt > 0) {
+                    val backoffMs = INITIAL_BACKOFF_MS * (1L shl (attempt - 1)) // 500ms, 1000ms
+                    Log.d(TAG, "Retry $attempt for $instance after ${backoffMs}ms backoff")
+                    delay(backoffMs)
+                }
+                return operation()
+            } catch (e: Exception) {
+                lastException = e
+                if (!isTransientError(e)) {
+                    Log.w(TAG, "Permanent error for $instance: ${e.message}")
+                    break // Don't retry on permanent errors (4xx etc.)
+                }
+                Log.w(TAG, "Transient error for $instance (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${e.message}")
+            }
+        }
+        return null
     }
 
     suspend fun fetchMetadata(url: String): Result<MetadataResult> = withContext(Dispatchers.IO) {
@@ -149,12 +199,12 @@ class MetadataFetcher {
 
             val instancesToTry = getActiveInstances()
             for (instance in instancesToTry) {
-                try {
+                val result = executeWithRetry(instance) {
                     val apiUrl = "$instance/api/v1/playlists/$playlistId"
                     val response = Jsoup.connect(apiUrl)
                         .ignoreContentType(true)
                         .userAgent("Mozilla/5.0")
-                        .timeout(10000)
+                        .timeout(CONNECT_TIMEOUT_MS)
                         .execute()
                     val json = JSONObject(response.body())
                     val videosArray = json.optJSONArray("videos")
@@ -171,13 +221,12 @@ class MetadataFetcher {
                                 }
                             }
                         }
-                        if (tracks.isNotEmpty()) {
-                            trackCache.put(playlistId, tracks)
-                            return@withContext Result.success(tracks)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Invidious instance $instance failed: ${e.message}")
+                        tracks.ifEmpty { null }
+                    } else null
+                }
+                if (result != null) {
+                    trackCache.put(playlistId, result)
+                    return@withContext Result.success(result)
                 }
             }
             Result.failure(Exception("Keine Tracks gefunden."))
@@ -193,14 +242,14 @@ class MetadataFetcher {
     private suspend fun fetchFromInvidious(playlistId: String): MetadataResult? {
         val instancesToTry = getActiveInstances()
         for (instance in instancesToTry) {
-            try {
+            val result = executeWithRetry(instance) {
                 val apiUrl = "$instance/api/v1/playlists/$playlistId"
                 Log.d(TAG, "Trying Invidious: $apiUrl")
 
                 val response = Jsoup.connect(apiUrl)
                     .ignoreContentType(true)
                     .userAgent("Mozilla/5.0")
-                    .timeout(10000)
+                    .timeout(CONNECT_TIMEOUT_MS)
                     .execute()
 
                 val json = JSONObject(response.body())
@@ -217,11 +266,10 @@ class MetadataFetcher {
                     // Try to get highest resolution thumbnail
                     val bestThumb = upgradeImageResolution(thumbnailUrl)
 
-                    return MetadataResult(title, bestThumb, trackCount, duration)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Invidious instance $instance failed: ${e.message}")
+                    MetadataResult(title, bestThumb, trackCount, duration)
+                } else null
             }
+            if (result != null) return result
         }
         return null
     }
@@ -230,8 +278,8 @@ class MetadataFetcher {
     // Strategy 2: YouTube oEmbed API
     // ──────────────────────────────────────────────────────────────
 
-    private fun fetchFromOEmbed(url: String): MetadataResult? {
-        try {
+    private suspend fun fetchFromOEmbed(url: String): MetadataResult? {
+        return executeWithRetry("oEmbed") {
             // oEmbed only works with www.youtube.com URLs
             val normalizedUrl = url.replace("music.youtube.com", "www.youtube.com")
             val encodedUrl = URLEncoder.encode(normalizedUrl, "UTF-8")
@@ -240,7 +288,7 @@ class MetadataFetcher {
             val response = Jsoup.connect(oEmbedUrl)
                 .ignoreContentType(true)
                 .userAgent("Mozilla/5.0")
-                .timeout(10000)
+                .timeout(CONNECT_TIMEOUT_MS)
                 .execute()
 
             val json = JSONObject(response.body())
@@ -250,27 +298,24 @@ class MetadataFetcher {
 
             if (title.isNotEmpty()) {
                 val duration = if (author.isNotEmpty()) author else null
-                return MetadataResult(title, upgradeImageResolution(thumbnailUrl), null, duration)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "oEmbed failed: ${e.message}")
+                MetadataResult(title, upgradeImageResolution(thumbnailUrl), null, duration)
+            } else null
         }
-        return null
     }
 
     // ──────────────────────────────────────────────────────────────
     // Strategy 3: YouTube RSS Feed
     // ──────────────────────────────────────────────────────────────
 
-    private fun fetchFromRssFeed(playlistId: String): MetadataResult? {
-        try {
+    private suspend fun fetchFromRssFeed(playlistId: String): MetadataResult? {
+        return executeWithRetry("RSS") {
             val rssUrl = "https://www.youtube.com/feeds/videos.xml?playlist_id=$playlistId"
             Log.d(TAG, "Trying RSS: $rssUrl")
 
             val doc = Jsoup.connect(rssUrl)
                 .ignoreContentType(true)
                 .userAgent("Mozilla/5.0")
-                .timeout(10000)
+                .timeout(CONNECT_TIMEOUT_MS)
                 .get()
 
             val title = doc.select("feed > title").text()
@@ -295,12 +340,9 @@ class MetadataFetcher {
             }
 
             if (title.isNotEmpty()) {
-                return MetadataResult(title, upgradeImageResolution(thumbnailUrl), trackCount, null)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "RSS failed: ${e.message}")
+                MetadataResult(title, upgradeImageResolution(thumbnailUrl), trackCount, null)
+            } else null
         }
-        return null
     }
 
     // ──────────────────────────────────────────────────────────────

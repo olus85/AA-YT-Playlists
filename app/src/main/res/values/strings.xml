@@ -35,4 +35,9 @@
     <string name="overlay_permission_title">Über anderen Apps anzeigen</string>
     <string name="overlay_permission_description">Wird benötigt, um YouTube Music auch aus dem Hintergrund starten zu können, wenn die App nicht im Vordergrund ist.</string>
     <string name="refresh">Aktualisieren</string>
+    <string name="lyrics">Songtexte</string>
+    <string name="lyrics_button">Songtexte anzeigen</string>
+    <string name="no_lyrics">Keine Songtexte verfügbar</string>
+    <string name="lyrics_loading">Lade Songtexte…</string>
+    <string name="close">Schließen</string>
 </resources>

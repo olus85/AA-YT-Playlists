@@ -9,6 +9,7 @@ import app.olus.ytmusic.autolauncher.domain.model.Playlist
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -17,6 +18,12 @@ import kotlinx.coroutines.awaitAll
 
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+
+import app.olus.ytmusic.autolauncher.service.MediaSyncManager
+import app.olus.ytmusic.autolauncher.data.repository.LyricsFetcher
+import app.olus.ytmusic.autolauncher.data.repository.LyricsState
+import android.media.MediaMetadata
+import android.media.session.PlaybackState
 
 data class AddPlaylistState(
     val url: String = "",
@@ -31,8 +38,16 @@ data class AddPlaylistState(
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val repository: PlaylistRepository,
-    private val metadataFetcher: MetadataFetcher
+    private val metadataFetcher: MetadataFetcher,
+    val mediaSyncManager: MediaSyncManager,
+    private val lyricsFetcher: LyricsFetcher
 ) : ViewModel() {
+
+    val currentMetadata: StateFlow<MediaMetadata?> = mediaSyncManager.currentMetadata
+    val currentPlaybackState: StateFlow<PlaybackState?> = mediaSyncManager.currentPlaybackState
+
+    private val _lyricsState = MutableStateFlow<LyricsState>(LyricsState.Empty)
+    val lyricsState: StateFlow<LyricsState> = _lyricsState.asStateFlow()
 
     val playlists: StateFlow<List<Playlist>> = repository.getAllPlaylists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -44,6 +59,25 @@ class PlaylistViewModel @Inject constructor(
             val list = playlists.first { it.isNotEmpty() || true }
             list.filter { it.trackCount == null }.forEach { playlist ->
                 refreshPlaylistMetadata(playlist)
+            }
+        }
+
+        viewModelScope.launch {
+            currentMetadata.collect { metadata ->
+                if (metadata != null) {
+                    val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
+                    val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                    val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+                    
+                    if (!title.isNullOrBlank() && !artist.isNullOrBlank()) {
+                        _lyricsState.value = LyricsState.Loading
+                        _lyricsState.value = lyricsFetcher.fetchLyrics(title, artist, duration)
+                    } else {
+                        _lyricsState.value = LyricsState.Empty
+                    }
+                } else {
+                    _lyricsState.value = LyricsState.Empty
+                }
             }
         }
     }

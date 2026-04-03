@@ -61,6 +61,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Icon
@@ -84,6 +85,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.core.app.NotificationManagerCompat
@@ -130,6 +132,10 @@ import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import kotlinx.coroutines.isActive
+import androidx.compose.ui.draw.blur
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.Shadow
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main Screen
@@ -144,6 +150,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     var showDeleteDialog by remember { mutableStateOf<Playlist?>(null) }
     var showEditDialog by remember { mutableStateOf<Playlist?>(null) }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
+    var showLyricsDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val app = context.applicationContext as YTMusicAutoLauncherApp
@@ -157,6 +164,18 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    val currentMetadata by viewModel.currentMetadata.collectAsState()
+    val currentPlaybackState by viewModel.currentPlaybackState.collectAsState()
+    val lyricsState by viewModel.lyricsState.collectAsState()
+
+    val sheetState = androidx.compose.material3.rememberStandardBottomSheetState(
+        initialValue = androidx.compose.material3.SheetValue.PartiallyExpanded,
+        skipHiddenState = true
+    )
+    val scaffoldState = androidx.compose.material3.rememberBottomSheetScaffoldState(
+        bottomSheetState = sheetState
+    )
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -180,6 +199,15 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                     }
                 },
                 actions = {
+                    AnimatedVisibility(visible = currentMetadata != null) {
+                        IconButton(onClick = { showLyricsDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = stringResource(R.string.lyrics_button),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     IconButton(onClick = { showDiagnosticsDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -286,7 +314,15 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                     )
                 }
             }
-        }
+            // Compact Now Playing Bar
+            if (currentMetadata != null) {
+                CompactNowPlayingBar(
+                    metadata = currentMetadata,
+                    playbackState = currentPlaybackState,
+                    modifier = Modifier.clickable { showLyricsDialog = true }
+                )
+            }
+        } // End of Column
     }
 
     // Dialogs
@@ -330,6 +366,15 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     if (showDiagnosticsDialog) {
         DiagnosticsDialog(
             onDismiss = { showDiagnosticsDialog = false }
+        )
+    }
+
+    if (showLyricsDialog && currentMetadata != null) {
+        LyricsDialog(
+            metadata = currentMetadata,
+            playbackState = currentPlaybackState,
+            lyricsState = lyricsState,
+            onDismiss = { showLyricsDialog = false }
         )
     }
 }
@@ -385,6 +430,88 @@ fun NotificationAccessBanner(onGrantClick: () -> Unit) {
                     style = MaterialTheme.typography.labelMedium
                 )
             }
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Compact Now Playing Bar
+// ──────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun CompactNowPlayingBar(
+    metadata: android.media.MediaMetadata?,
+    playbackState: android.media.session.PlaybackState?,
+    modifier: Modifier = Modifier
+) {
+    if (metadata == null) return
+    
+    val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "Unbekannt"
+    val artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: "Unbekannt"
+    val artUri = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
+    val isPlaying = playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (artUri != null) {
+                AsyncImage(
+                    model = artUri,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = if (isPlaying) YTRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (isPlaying) YTRed.copy(alpha = 0.2f) else Color.Transparent)
+                    .padding(6.dp)
+            )
         }
     }
 }
@@ -1217,4 +1344,192 @@ fun DiagnosticsDialog(
             }
         }
     )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Lyrics Dialog
+// ──────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LyricsDialog(
+    metadata: android.media.MediaMetadata?,
+    playbackState: android.media.session.PlaybackState?,
+    lyricsState: app.olus.ytmusic.autolauncher.data.repository.LyricsState,
+    onDismiss: () -> Unit
+) {
+    if (metadata == null) return
+
+    val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "Unbekannt"
+    val artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: "Unbekannt"
+    val artUri = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
+    
+    // Auto-scroll logic for plain-text lyrics (scroll down one line every 10 seconds)
+    var autoScrollIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(lyricsState, playbackState?.state) {
+        if (lyricsState is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Success && !lyricsState.isSynced) {
+            if (playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
+                while(isActive && autoScrollIndex < lyricsState.lyrics.size) {
+                    kotlinx.coroutines.delay(10000) // 10 seconds per line
+                    autoScrollIndex++
+                }
+            }
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+        ) {
+            // Background Album Art with Blur
+            if (artUri != null) {
+                AsyncImage(
+                    model = artUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0.6f)
+                        .blur(50.dp)
+                )
+                Box(modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.4f), Color.Black.copy(alpha = 0.8f)))
+                ))
+            }
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 40.dp, start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = artist,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    TextButton(onClick = onDismiss, modifier = Modifier.padding(start = 8.dp)) {
+                        Text(stringResource(R.string.close), color = Color.White)
+                    }
+                }
+
+                // Lyrics Content
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    when (lyricsState) {
+                        is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Loading -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = YTRed)
+                            }
+                        }
+                        is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Empty -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(stringResource(R.string.no_lyrics), color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                        is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Error -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(lyricsState.message.ifEmpty { stringResource(R.string.error_fetch_failed) }, color = YTRed)
+                            }
+                        }
+                        is app.olus.ytmusic.autolauncher.data.repository.LyricsState.Success -> {
+                            val listState = rememberLazyListState()
+                            var currentPositionMs by remember { mutableStateOf(playbackState?.position ?: 0L) }
+
+                            if (lyricsState.isSynced) {
+                                LaunchedEffect(playbackState) {
+                                    if (playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
+                                        val startPos = playbackState.position
+                                        val startTime = playbackState.lastPositionUpdateTime
+                                        while (isActive) {
+                                            val timeDelta = android.os.SystemClock.elapsedRealtime() - startTime
+                                            currentPositionMs = startPos + (timeDelta * playbackState.playbackSpeed).toLong()
+                                            
+                                            val activeIndex = lyricsState.lyrics.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
+                                            if (activeIndex >= 0 && activeIndex < lyricsState.lyrics.size) {
+                                                val firstVisible = listState.firstVisibleItemIndex
+                                                val lastVisible = firstVisible + listState.layoutInfo.visibleItemsInfo.size
+                                                if (activeIndex < firstVisible || activeIndex > lastVisible - 3) {
+                                                    listState.animateScrollToItem((activeIndex - 3).coerceAtLeast(0))
+                                                }
+                                            }
+                                            kotlinx.coroutines.delay(100)
+                                        }
+                                    } else {
+                                        currentPositionMs = playbackState?.position ?: 0L
+                                    }
+                                }
+                            } else {
+                                // Auto-scroll for plain-text
+                                LaunchedEffect(autoScrollIndex) {
+                                    if (autoScrollIndex > 0 && autoScrollIndex < lyricsState.lyrics.size) {
+                                        val firstVisible = listState.firstVisibleItemIndex
+                                        val lastVisible = firstVisible + listState.layoutInfo.visibleItemsInfo.size
+                                        if (autoScrollIndex < firstVisible || autoScrollIndex > lastVisible - 3) {
+                                            listState.animateScrollToItem((autoScrollIndex - 3).coerceAtLeast(0))
+                                        }
+                                    }
+                                }
+                            }
+
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 120.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                itemsIndexed(lyricsState.lyrics) { index, line ->
+                                    val isActive = if (lyricsState.isSynced) {
+                                        currentPositionMs >= line.timestampMs && 
+                                        (index == lyricsState.lyrics.lastIndex || currentPositionMs < lyricsState.lyrics[index + 1].timestampMs)
+                                    } else {
+                                        index == autoScrollIndex
+                                    }
+                                                   
+                                    val activeLineStyle = MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.Black,
+                                        shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), blurRadius = 8f)
+                                    )
+                                    val inactiveLineStyle = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+
+                                    val animationScale by animateFloatAsState(if (isActive) 1.05f else 1.0f)
+                                    val animationAlpha by animateFloatAsState(if (isActive) 1.0f else 0.4f)
+
+                                    Text(
+                                        text = line.text.ifEmpty { "🎶" },
+                                        style = if (isActive) activeLineStyle else inactiveLineStyle,
+                                        color = Color.White.copy(alpha = animationAlpha),
+                                        modifier = Modifier
+                                            .padding(vertical = if (isActive) 16.dp else 10.dp)
+                                            .scale(animationScale),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            } // LazyColumn
+                        }
+                    } // When
+                } // Box Lyrics Content
+            } // Column
+        } // Box Background
+    }
 }

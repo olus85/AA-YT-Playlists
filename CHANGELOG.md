@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-04-03
+
+### Added
+- **Full-Screen Lyrics Dialog**: Replaced the small bottom sheet with a stunning, full-screen transparent dialog featuring blurred album art backgrounds. Added **automatic scrolling** for plain-text lyrics (10-second intervals per line).
+- **Genius API Fallback**: Integrated the Genius API as a third fallback for tracks where sync-lyrics aren't available, providing extensive lyrics coverage.
+- **Improved Metadata Resilience**: Implemented a robust exponential backoff retry mechanism (1s, 2s, 4s...) for the Invidious API, making track fetching much more reliable during network fluctuations.
+
+### Changed
+- **Native Media Architecture**: Completely removed the redundant `androidx.car.app` (Car App Library) dependencies. The app now relies exclusively on the native `MediaBrowserService` for a leaner, more standard Android Auto integration.
+- **Enhanced Logging**: Updated the global logger to enforce a **5 MB file size limit** with a stable clear-and-start-over strategy to keep the diagnostics log manageable and efficient.
+
+### Fixed
+- **Build Stability**: Resolved Persistent KSP/Room compilation errors through improved build environmental handling.
+
 ## [2.1.0] - 2026-03-31
 
 ### Added

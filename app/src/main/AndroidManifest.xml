@@ -43,15 +43,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Android Auto Car App Service (POI template-based, for DHU/emulator) -->
-        <service
-            android:name=".ui.auto.YTMusicCarAppService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.car.app.CarAppService" />
-                <category android:name="androidx.car.app.category.POI" />
-            </intent-filter>
-        </service>
+
 
         <!-- Native Media Browser Service for Android Auto headunits -->
         <service
@@ -73,11 +65,9 @@
             </intent-filter>
         </service>
 
-        <meta-data
-            android:name="androidx.car.app.minCarApiLevel"
-            android:value="1" />
 
-        <!-- Receiver to bridge car clicks to mobile activity (fallback for CarAppService) -->
+
+        <!-- Receiver to bridge car clicks to mobile activity -->
         <receiver
             android:name=".ui.PlaylistReceiver"
             android:exported="false">

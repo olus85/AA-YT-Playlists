@@ -14,8 +14,8 @@ android {
         applicationId = "app.olus.ytmusic.autolauncher"
         minSdk = 23
         targetSdk = 35
-        versionCode = 9
-        versionName = "2.1.0"
+        versionCode = 10
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -77,7 +77,6 @@ dependencies {
     implementation(libs.jsoup)
 
     // Android Auto
-    implementation(libs.androidx.car.app)
     implementation("androidx.media:media:1.7.0")
 
     // Coroutines

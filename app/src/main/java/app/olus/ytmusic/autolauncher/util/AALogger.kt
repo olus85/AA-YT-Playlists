@@ -21,7 +21,7 @@ object AALogger {
     private const val KEY_ENABLED = "debug_enabled"
     private const val KEY_FIRST_RUN = "first_run"
     private const val LOG_FILE_NAME = "aa_debug.log"
-    private const val MAX_LOG_SIZE = 512 * 1024 // 512 KB max
+    private const val MAX_LOG_SIZE = 5 * 1024 * 1024 // 5 MB max
 
     private var logFile: File? = null
     private var prefs: SharedPreferences? = null
@@ -83,11 +83,11 @@ object AALogger {
     private fun writeToFile(level: String, tag: String, message: String) {
         try {
             val file = logFile ?: return
-            // Rotate if too large
+            // Clear and restart when file reaches 5 MB limit
             if (file.exists() && file.length() > MAX_LOG_SIZE) {
-                val lines = file.readLines()
-                val halfLines = lines.drop(lines.size / 2)
-                file.writeText(halfLines.joinToString("\n") + "\n")
+                file.writeText("")
+                val timestamp = dateFormat.format(Date())
+                file.appendText("[$timestamp] F/$TAG: === LOG RESET (5 MB limit reached) ===\n")
             }
             val timestamp = dateFormat.format(Date())
             file.appendText("[$timestamp] $level/$tag: $message\n")

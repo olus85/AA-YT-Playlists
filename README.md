@@ -5,11 +5,13 @@ AA YT Playlists is an Android Auto application that allows users to manage and p
 ## Features
 
 - **Native Media Session Proxy**: Mirrors YouTube Music's playback state (title, artist, album art, progress) directly onto Android Auto's media interface in real time.
-- **Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no hacks.
+- **Native Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no legacy hacks.
+- **Full-Screen Lyrics UI**: A stunning, full-screen transparent lyrics dialog with blurred album art and **automatic scrolling** for non-synced tracks.
+- **Triple-Tier Lyrics Support**: Synchronized lyrics via `lrclib`, `Musixmatch`, and plain-text fallback via the **Genius API**.
 - **Shuffle Play**: One-tap shuffle-play for entire playlists, directly from the car's media UI.
 - **Transport Control Forwarding**: Play, Pause, Skip, Seek from the steering wheel or headunit are forwarded to YouTube Music.
 - **Background Playback Launch**: Starts YouTube Music playback even when the app isn't in the foreground, using Foreground Service promotion and `SYSTEM_ALERT_WINDOW` permission.
-- **Metadata Fetching**: Pulls playlist details (thumbnails, track counts, duration) dynamically from YouTube.
+- **Metadata Fetching with Retry Logic**: Pulls playlist details (thumbnails, track counts, duration) dynamically with exponential backoff for extreme reliability.
 - **Offline Caching**: Caches images and data using Coil and Room for reliable performance even in poor network conditions.
 - **ReVanced Support**: Compatible with `app.rvx.android.apps.youtube.music`, `app.revanced.android.apps.youtube.music`, and the official `com.google.android.apps.youtube.music`.
 
