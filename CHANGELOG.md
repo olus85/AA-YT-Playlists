@@ -2,7 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.0] - 2026-04-05
+
+### Added
+- **Google Assistant Voice Search** (`onPlayFromSearch`): Say "Hey Google, play [Song] on YT Playlists" to start playback hands-free. The app searches Jellyfin first (if configured), then falls back to Invidious/YouTube. A "Suche: …" status is shown on the car screen while searching.
+- **Offline Audio Caching for Jellyfin**: ExoPlayer now caches Jellyfin audio streams locally using `CacheDataSource` + `SimpleCache` (LRU eviction). Previously played tracks continue without interruption when driving through dead zones.
+- **Configurable Cache Size**: New "Audio-Cache" section in Settings lets you choose between 100 MB, 250 MB, 500 MB (default), or 1 GB for the local audio cache.
+- **Auto-Lyrics Opt-In**: The app no longer forcibly comes to the foreground when a track changes. A new "Songtexte → Automatisch anzeigen" toggle in Settings (default: off) re-enables the previous behavior for users who want it.
+
+### Changed
+- **Compact TopAppBar**: Replaced the large two-row `LargeTopAppBar` with a standard single-line `TopAppBar`. Title and action icons sit on one line; the playlist count appears as a small subtitle.
+- **Instant List Rendering**: Removed the staggered entrance animation (per-item delay + `AnimatedVisibility`) from the playlist list. Items now render immediately with no "swim-in" effect. Drag & Drop visual feedback (scale / elevation) is unchanged.
+- **Settings Cleanup**: Removed the raw log text viewer (200 dp scroll card) from the Settings dialog. Share and Clear buttons are still present. The dialog is noticeably less cluttered.
+- **OOM-safe Cover Loading**: Replaced `URL.readBytes()` + `BitmapFactory.decodeStream()` with Coil's `ImageLoader`, downsampling covers to 400×400 px before loading into RAM. Eliminates out-of-memory crashes when rapidly skipping tracks in Android Auto.
+- **Jellyfin Voice Search**: `JellyfinRepository` now exposes a `searchTrack(query)` method (Items API with `SearchTerm`) used by the voice search flow.
+
+### Fixed
+- **OOM / Service Crash**: Rapid track skipping in Android Auto no longer causes the background service to run out of memory due to uncompressed 1000×1000 album art bitmaps.
+
 ## [2.4.0] - 2026-04-03
+
 
 ### Added
 - **Native Jellyfin Playback**: Complete rewrite of the Jellyfin integration. Replaced external app launching with a native, high-performance `ExoPlayer` (Media3) integration. Jellyfin tracks now play directly within the app, supporting background playback and system media controls.

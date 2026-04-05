@@ -235,6 +235,35 @@ class JellyfinRepository(private val context: Context) {
         return result
     }
 
+    // ─── Search ─────────────────────────────────────────────────────────
+
+    /**
+     * Searches for audio tracks on the Jellyfin server.
+     * Used for Google Assistant voice search integration.
+     * Returns the first matching track, or null if nothing found / not configured.
+     */
+    suspend fun searchTrack(query: String): JellyfinItem? = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext null
+
+        try {
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val url = "$serverUrl/Users/$userId/Items?" +
+                "SearchTerm=$encodedQuery&IncludeItemTypes=Audio&Recursive=true&Limit=1"
+
+            val items = fetchItems(url)
+            val result = items.firstOrNull()
+            if (result != null) {
+                Log.d(TAG, "Jellyfin search found: ${result.name} by ${result.artist}")
+            } else {
+                Log.d(TAG, "Jellyfin search: no results for '$query'")
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Jellyfin search failed", e)
+            null
+        }
+    }
+
     // ─── URL Builders ───────────────────────────────────────────────────
 
     /**

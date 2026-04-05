@@ -414,6 +414,57 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             AALogger.log(TAG, "onSeekTo($pos) → forwarding")
             mediaSyncManager.seekTo(pos)
         }
+
+        override fun onPlayFromSearch(query: String?, extras: Bundle?) {
+            AALogger.forceLog(TAG, "onPlayFromSearch: query='$query'")
+            if (query.isNullOrBlank()) return
+
+            beginLaunch()
+
+            // Show "Searching..." metadata while searching
+            mediaSession.setMetadata(
+                MediaMetadataCompat.Builder()
+                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Suche: $query")
+                    .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Wird gesucht...")
+                    .build()
+            )
+
+            scope.launch {
+                try {
+                    // 1. Try Jellyfin first (if configured)
+                    val jfTrack = jellyfinRepository.searchTrack(query)
+                    if (jfTrack != null) {
+                        AALogger.forceLog(TAG, "Voice search: Jellyfin hit '${jfTrack.name}' by ${jfTrack.artist}")
+                        mainHandler.post {
+                            jellyfinNativePlayer.playTracks(listOf(jfTrack), 0, false)
+                        }
+                        return@launch
+                    }
+
+                    // 2. Fallback: Invidious search
+                    val track = metadataFetcher.searchTrack(query)
+                    if (track != null) {
+                        AALogger.forceLog(TAG, "Voice search: Invidious hit '${track.title}' by ${track.author} (${track.videoId})")
+                        val url = "https://music.youtube.com/watch?v=${track.videoId}"
+                        launchYouTubeMusic(url)
+                    } else {
+                        AALogger.logError(TAG, "Voice search: no results for '$query'")
+                        mediaSession.setPlaybackState(
+                            PlaybackStateCompat.Builder()
+                                .setActions(SUPPORTED_ACTIONS)
+                                .setState(PlaybackStateCompat.STATE_ERROR, 0, 1.0f)
+                                .setErrorMessage(
+                                    PlaybackStateCompat.ERROR_CODE_NOT_SUPPORTED,
+                                    "Kein Ergebnis f\u00fcr \"$query\""
+                                )
+                                .build()
+                        )
+                    }
+                } catch (e: Exception) {
+                    AALogger.logError(TAG, "Voice search failed", e)
+                }
+            }
+        }
     }
 
     // ─── Playback Handlers ──────────────────────────────────────────────
@@ -726,15 +777,15 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                         lastLoadedBitmapUri = artUri // verhinder mehrmaliges Ausführen
                         scope.launch(Dispatchers.IO) {
                             try {
-                                val uri = android.net.Uri.parse(artUri)
-                                val inputStream = if (artUri.startsWith("http")) {
-                                    java.net.URL(artUri).readBytes().inputStream()
-                                } else {
-                                    contentResolver.openInputStream(uri)
-                                }
-                                
-                                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                                inputStream?.close()
+                                val imageLoader = coil.ImageLoader.Builder(this@YTMediaBrowserService)
+                                    .build()
+                                val request = coil.request.ImageRequest.Builder(this@YTMediaBrowserService)
+                                    .data(artUri)
+                                    .size(400) // Downsampling auf 400x400 – verhindert OOM
+                                    .allowHardware(false) // Software-Bitmap für MediaSession
+                                    .build()
+                                val result = imageLoader.execute(request)
+                                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
 
                                 if (bitmap != null) {
                                     lastLoadedBitmap = bitmap
@@ -745,7 +796,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                                             currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
                                             currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
                                             mediaSession.setMetadata(currentBuilder.build())
-                                            AALogger.log(TAG, "Proxy: Applied lazy artwork")
+                                            AALogger.log(TAG, "Proxy: Applied lazy artwork (Coil, ${bitmap.width}x${bitmap.height})")
                                         }
                                     }
                                 } else {
@@ -820,6 +871,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
             PlaybackStateCompat.ACTION_SEEK_TO or
-            PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID
+            PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID or
+            PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH
     }
 }

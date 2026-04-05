@@ -72,6 +72,13 @@ class MediaSyncManager @Inject constructor(
         val newTitle = newMetadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
 
         if (newTitle != null && newTitle != oldTitle) {
+            val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            val autoLyrics = prefs.getBoolean("auto_lyrics", false)
+            if (!autoLyrics) {
+                AALogger.log(TAG, "Auto-Lyrics deaktiviert, überspringe Foreground-Start")
+                _currentMetadata.value = newMetadata
+                return
+            }
             // Track hat sich geändert -> App in den Vordergrund + Lyrics
             try {
                 val intent = Intent(context, MainActivity::class.java).apply {

@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinItem
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.util.AALogger
+import app.olus.ytmusic.autolauncher.util.AudioCacheManager
 
 class JellyfinExoPlayerManager(
     private val context: Context,
@@ -24,7 +25,20 @@ class JellyfinExoPlayerManager(
     var exoPlayer: ExoPlayer? = null
 
     fun initialize() {
-        exoPlayer = ExoPlayer.Builder(context).build().apply {
+        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+
+        val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(AudioCacheManager.getCache(context))
+            .setUpstreamDataSourceFactory(httpDataSourceFactory)
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
+
+        exoPlayer = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build().apply {
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)

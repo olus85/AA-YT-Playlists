@@ -383,4 +383,50 @@ class MetadataFetcher {
             .replace("mqdefault.jpg", "maxresdefault.jpg")
             .replace("/default.jpg", "/maxresdefault.jpg")
     }
+
+    // ──────────────────────────────────────────────────────────────
+    // Voice Search: Find a single track by query
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Searches for a single track via Invidious search API.
+     * Returns the first matching video result, or null if nothing found.
+     * Used for Google Assistant "Hey Google, play X on YT Playlists" integration.
+     */
+    suspend fun searchTrack(query: String): Track? = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Searching for track: $query")
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val instancesToTry = getActiveInstances()
+
+            for (instance in instancesToTry) {
+                val result = executeWithRetry(instance) {
+                    val apiUrl = "$instance/api/v1/search?q=$encodedQuery&type=video&sort_by=relevance"
+                    Log.d(TAG, "Trying search: $apiUrl")
+
+                    val response = Jsoup.connect(apiUrl)
+                        .ignoreContentType(true)
+                        .userAgent("Mozilla/5.0")
+                        .timeout(CONNECT_TIMEOUT_MS)
+                        .execute()
+
+                    val jsonArray = org.json.JSONArray(response.body())
+                    if (jsonArray.length() > 0) {
+                        val first = jsonArray.getJSONObject(0)
+                        val videoId = first.optString("videoId", "")
+                        val title = first.optString("title", "")
+                        val author = first.optString("author", "")
+                        if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                            Track(title, author, videoId)
+                        } else null
+                    } else null
+                }
+                if (result != null) return@withContext result
+            }
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Search failed", e)
+            null
+        }
+    }
 }

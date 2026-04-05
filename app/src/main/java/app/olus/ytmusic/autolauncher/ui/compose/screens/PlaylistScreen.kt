@@ -10,7 +10,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,7 +67,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -193,13 +193,13 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
                     Column {
                         Text(
                             stringResource(R.string.yt_playlists),
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.headlineMedium
+                            style = MaterialTheme.typography.titleLarge
                         )
                         if (playlists.isNotEmpty()) {
                             Text(
@@ -228,7 +228,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                         )
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -716,29 +716,17 @@ fun DraggablePlaylistList(
                     label = "scale"
                 )
 
-                // Staggered entrance animation
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(index * 50L)
-                    visible = true
-                }
-
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn() + slideInVertically { it / 3 }
-                ) {
-                    PlaylistItem(
-                        playlist = playlist,
-                        onDelete = { onDelete(playlist) },
-                        onEditTitle = { onEditPlaylist(playlist) },
-                        onRefreshMetadata = { onRefreshMetadata(playlist) },
-                        isDragging = isDragging,
-                        dragModifier = Modifier.detectReorder(state),
-                        modifier = Modifier
-                            .scale(scale)
-                            .shadow(elevation, RoundedCornerShape(16.dp))
-                    )
-                }
+                PlaylistItem(
+                    playlist = playlist,
+                    onDelete = { onDelete(playlist) },
+                    onEditTitle = { onEditPlaylist(playlist) },
+                    onRefreshMetadata = { onRefreshMetadata(playlist) },
+                    isDragging = isDragging,
+                    dragModifier = Modifier.detectReorder(state),
+                    modifier = Modifier
+                        .scale(scale)
+                        .shadow(elevation, RoundedCornerShape(16.dp))
+                )
             }
         }
     }

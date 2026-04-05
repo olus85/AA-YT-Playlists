@@ -84,6 +84,7 @@ dependencies {
 
     // Media3 (ExoPlayer for native playback)
     implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-datasource:1.2.1")
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

@@ -87,7 +87,18 @@ fun SettingsDialog(
 
     // ─── Diagnostics State ───
     var debugEnabled by remember { mutableStateOf(AALogger.isEnabled) }
-    var logText by remember { mutableStateOf(AALogger.getLogs()) }
+
+    // ─── Auto-Lyrics State ───
+    val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+    var autoLyricsEnabled by remember {
+        mutableStateOf(prefs.getBoolean("auto_lyrics", false))
+    }
+
+    // ─── Cache Settings State ───
+    val cacheSizeOptions = listOf(100L, 250L, 500L, 1000L) // MB
+    var selectedCacheSize by remember {
+        mutableStateOf(prefs.getLong("audio_cache_limit_mb", 500L))
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -316,12 +327,6 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TextButton(
-                        onClick = { logText = AALogger.getLogs() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.refresh_logs), color = YTRed)
-                    }
-                    TextButton(
                         onClick = {
                             val logs = AALogger.getLogs()
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -343,7 +348,6 @@ fun SettingsDialog(
                     TextButton(
                         onClick = {
                             AALogger.clearLogs()
-                            logText = AALogger.getLogs()
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -353,28 +357,92 @@ fun SettingsDialog(
                     }
                 }
 
-                // Log viewer
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // ════════════════════════════════════════════
+                // Auto-Lyrics Section
+                // ════════════════════════════════════════════
+                Text(
+                    "Songtexte",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = logText,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(10.dp)
-                            .verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Text("Automatisch anzeigen", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = autoLyricsEnabled,
+                        onCheckedChange = {
+                            autoLyricsEnabled = it
+                            prefs.edit().putBoolean("auto_lyrics", it).apply()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = YTRed
+                        )
                     )
+                }
+
+                Text(
+                    "Öffnet die App automatisch bei neuen Songs, um Songtexte anzuzeigen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // ════════════════════════════════════════════
+                // Cache Settings Section
+                // ════════════════════════════════════════════
+                Text(
+                    "Audio-Cache",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Text(
+                    "Jellyfin-Audiostreams werden lokal zwischengespeichert für Offline-Wiedergabe.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    cacheSizeOptions.forEach { sizeMb ->
+                        val isSelected = selectedCacheSize == sizeMb
+                        OutlinedButton(
+                            onClick = {
+                                selectedCacheSize = sizeMb
+                                prefs.edit().putLong("audio_cache_limit_mb", sizeMb).apply()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = if (isSelected) {
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = YTRed.copy(alpha = 0.15f)
+                                )
+                            } else {
+                                ButtonDefaults.outlinedButtonColors()
+                            },
+                            border = androidx.compose.foundation.BorderStroke(
+                                if (isSelected) 2.dp else 1.dp,
+                                if (isSelected) YTRed else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Text(
+                                if (sizeMb >= 1000) "${sizeMb / 1000} GB" else "$sizeMb MB",
+                                color = if (isSelected) YTRed else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
                 }
             }
         },
