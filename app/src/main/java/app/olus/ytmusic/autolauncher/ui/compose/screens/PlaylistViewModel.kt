@@ -55,10 +55,11 @@ class PlaylistViewModel @Inject constructor(
     // Refresh metadata for playlists missing track count on first load only
     init {
         viewModelScope.launch {
-            // Wait for first emission, then refresh incomplete entries (once)
-            val list = playlists.first { it.isNotEmpty() || true }
-            list.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
-                refreshPlaylistMetadata(playlist)
+            val playlistList = playlists.value
+            if (playlistList.isNotEmpty()) {
+                playlistList.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
+                    refreshPlaylistMetadata(playlist)
+                }
             }
         }
 
@@ -191,15 +192,14 @@ class PlaylistViewModel @Inject constructor(
     fun forceRefreshPlaylist(playlist: Playlist) {
         viewModelScope.launch {
             if (playlist.source == "YOUTUBE") {
-                // Clear both memory cache and DB cache
                 metadataFetcher.clearTrackCache(playlist.url)
                 repository.deleteTracksForPlaylist(playlist.id)
-                
-                // Re-fetch metadata
+
+                metadataFetcher.fetchTracks(playlist.url)
+
                 val result = metadataFetcher.fetchMetadata(playlist.url)
                 result.fold(
                     onSuccess = { metadata ->
-                        // ONLY update track count and duration, DO NOT touch custom titles/images
                         repository.updatePlaylist(playlist.copy(
                             trackCount = metadata.trackCount ?: playlist.trackCount,
                             duration = metadata.duration ?: playlist.duration
@@ -208,7 +208,6 @@ class PlaylistViewModel @Inject constructor(
                     onFailure = { /* keep existing data */ }
                 )
             }
-            // For Jellyfin playlists, the refresh happens on next load from server
         }
     }
 

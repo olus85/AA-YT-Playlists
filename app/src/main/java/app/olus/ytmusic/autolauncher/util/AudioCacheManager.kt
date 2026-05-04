@@ -23,19 +23,23 @@ object AudioCacheManager {
     private var cache: SimpleCache? = null
     private var currentMaxBytes: Long = 0
 
-    /**
-     * Returns the shared SimpleCache instance.
-     * Reads the configured cache limit from SharedPreferences.
-     */
     fun getCache(context: Context): SimpleCache {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val maxMb = prefs.getLong(PREF_KEY, DEFAULT_CACHE_SIZE_MB)
         val maxBytes = maxMb * 1024 * 1024
 
-        return cache?.takeIf { currentMaxBytes == maxBytes } ?: synchronized(this) {
-            // Re-check inside lock
-            cache?.takeIf { currentMaxBytes == maxBytes } ?: run {
-                cache?.release()
+        if (cache != null && currentMaxBytes != maxBytes) {
+            synchronized(this) {
+                if (currentMaxBytes != maxBytes) {
+                    cache?.release()
+                    cache = null
+                    currentMaxBytes = 0
+                }
+            }
+        }
+
+        return cache ?: synchronized(this) {
+            cache ?: run {
                 createCache(context, maxBytes).also {
                     cache = it
                     currentMaxBytes = maxBytes

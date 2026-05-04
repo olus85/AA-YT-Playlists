@@ -166,15 +166,13 @@ class JellyfinRepository(private val context: Context) {
         try {
             val items = mutableListOf<JellyfinItem>()
 
-            // Fetch music albums
             val albumsUrl = "$serverUrl/Users/$userId/Items?" +
                 "IncludeItemTypes=MusicAlbum&Recursive=true&SortBy=SortName&SortOrder=Ascending&Limit=100"
-            items.addAll(fetchItems(albumsUrl))
+            fetchItems(albumsUrl).getOrNull()?.let { items.addAll(it) }
 
-            // Fetch playlists
             val playlistsUrl = "$serverUrl/Users/$userId/Items?" +
                 "IncludeItemTypes=Playlist&Recursive=true&SortBy=SortName&SortOrder=Ascending&Limit=100"
-            items.addAll(fetchItems(playlistsUrl))
+            fetchItems(playlistsUrl).getOrNull()?.let { items.addAll(it) }
 
             Log.d(TAG, "Fetched ${items.size} music items from Jellyfin")
             items
@@ -193,7 +191,7 @@ class JellyfinRepository(private val context: Context) {
         try {
             val url = "$serverUrl/Users/$userId/Items?" +
                 "ParentId=$itemId&SortBy=SortName&SortOrder=Ascending"
-            val tracks = fetchItems(url)
+            val tracks = fetchItems(url).getOrNull() ?: emptyList()
             Log.d(TAG, "Fetched ${tracks.size} tracks for item $itemId")
             tracks
         } catch (e: Exception) {
@@ -202,37 +200,42 @@ class JellyfinRepository(private val context: Context) {
         }
     }
 
-    private fun fetchItems(url: String): List<JellyfinItem> {
-        val response = Jsoup.connect(url)
-            .ignoreContentType(true)
-            .header("X-Emby-Authorization", buildAuthHeader(accessToken))
-            .timeout(10000)
-            .execute()
+    private fun fetchItems(url: String): Result<List<JellyfinItem>> {
+        return try {
+            val response = Jsoup.connect(url)
+                .ignoreContentType(true)
+                .header("X-Emby-Authorization", buildAuthHeader(accessToken))
+                .timeout(10000)
+                .execute()
 
-        if (response.statusCode() != 200) {
-            Log.w(TAG, "fetchItems HTTP ${response.statusCode()}")
-            return emptyList()
-        }
-
-        val json = JSONObject(response.body())
-        val itemsArray = json.optJSONArray("Items") ?: return emptyList()
-        val result = mutableListOf<JellyfinItem>()
-
-        for (i in 0 until itemsArray.length()) {
-            val item = itemsArray.optJSONObject(i) ?: continue
-            val id = item.optString("Id", "")
-            val name = item.optString("Name", "")
-            val type = item.optString("Type", "")
-            val artist = item.optString("AlbumArtist", "")
-                .ifEmpty { item.optJSONArray("Artists")?.optString(0) ?: "" }
-            val imageTags = item.optJSONObject("ImageTags")
-            val imageTag = imageTags?.optString("Primary")
-
-            if (id.isNotEmpty() && name.isNotEmpty()) {
-                result.add(JellyfinItem(id, name, type, artist, imageTag))
+            if (response.statusCode() != 200) {
+                Log.w(TAG, "fetchItems HTTP ${response.statusCode()}")
+                return Result.failure(Exception("HTTP ${response.statusCode()}"))
             }
+
+            val json = JSONObject(response.body())
+            val itemsArray = json.optJSONArray("Items") ?: return Result.success(emptyList())
+            val result = mutableListOf<JellyfinItem>()
+
+            for (i in 0 until itemsArray.length()) {
+                val item = itemsArray.optJSONObject(i) ?: continue
+                val id = item.optString("Id", "")
+                val name = item.optString("Name", "")
+                val type = item.optString("Type", "")
+                val artist = item.optString("AlbumArtist", "")
+                    .ifEmpty { item.optJSONArray("Artists")?.optString(0) ?: "" }
+                val imageTags = item.optJSONObject("ImageTags")
+                val imageTag = imageTags?.optString("Primary")
+
+                if (id.isNotEmpty() && name.isNotEmpty()) {
+                    result.add(JellyfinItem(id, name, type, artist, imageTag))
+                }
+            }
+            Result.success(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchItems error", e)
+            Result.failure(e)
         }
-        return result
     }
 
     // ─── Search ─────────────────────────────────────────────────────────
@@ -250,7 +253,7 @@ class JellyfinRepository(private val context: Context) {
             val url = "$serverUrl/Users/$userId/Items?" +
                 "SearchTerm=$encodedQuery&IncludeItemTypes=Audio&Recursive=true&Limit=1"
 
-            val items = fetchItems(url)
+            val items = fetchItems(url).getOrNull() ?: return@withContext null
             val result = items.firstOrNull()
             if (result != null) {
                 Log.d(TAG, "Jellyfin search found: ${result.name} by ${result.artist}")

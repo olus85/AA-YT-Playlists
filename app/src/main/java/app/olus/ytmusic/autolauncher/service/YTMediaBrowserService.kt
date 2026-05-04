@@ -758,12 +758,17 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     val artUri = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) 
                                 ?: metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)
 
+                    if (artUri.isNullOrEmpty()) {
+                        lastLoadedBitmap = null
+                        lastLoadedBitmapUri = null
+                    }
+
                     if (artBmp != null) {
                         builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artBmp)
                     } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
                         builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, lastLoadedBitmap)
                     }
-                    
+
                     if (albumArtBmp != null) {
                         builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, albumArtBmp)
                     } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
