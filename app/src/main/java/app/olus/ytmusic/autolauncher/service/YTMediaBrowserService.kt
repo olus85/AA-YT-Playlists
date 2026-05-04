@@ -84,6 +84,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     private var lastLoadedBitmapUri: String? = null
     private var lastLoadedBitmap: android.graphics.Bitmap? = null
+    private var pendingBitmapUri: String? = null
 
     private val ytMusicPackages = listOf(
         "app.rvx.android.apps.youtube.music",
@@ -778,38 +779,42 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     mediaSession.setMetadata(builder.build())
                     AALogger.log(TAG, "Proxy: Synced metadata → ${metadata.getString(MediaMetadata.METADATA_KEY_TITLE)}")
 
-                    if (artBmp == null && albumArtBmp == null && !artUri.isNullOrEmpty() && lastLoadedBitmapUri != artUri) {
-                        lastLoadedBitmapUri = artUri // verhinder mehrmaliges Ausführen
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                val imageLoader = coil.ImageLoader.Builder(this@YTMediaBrowserService)
-                                    .build()
-                                val request = coil.request.ImageRequest.Builder(this@YTMediaBrowserService)
-                                    .data(artUri)
-                                    .size(400) // Downsampling auf 400x400 – verhindert OOM
-                                    .allowHardware(false) // Software-Bitmap für MediaSession
-                                    .build()
-                                val result = imageLoader.execute(request)
-                                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                    if (artBmp == null && albumArtBmp == null && !artUri.isNullOrEmpty()) {
+                        if (lastLoadedBitmapUri != artUri) {
+                            pendingBitmapUri = artUri
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    val imageLoader = coil.ImageLoader.Builder(this@YTMediaBrowserService)
+                                        .build()
+                                    val request = coil.request.ImageRequest.Builder(this@YTMediaBrowserService)
+                                        .data(artUri)
+                                        .size(400)
+                                        .allowHardware(false)
+                                        .build()
+                                    val result = imageLoader.execute(request)
+                                    val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
 
-                                if (bitmap != null) {
-                                    lastLoadedBitmap = bitmap
-                                    withContext(Dispatchers.Main) {
-                                        val currentMeta = mediaSession.controller.metadata
-                                        if (currentMeta != null) {
-                                            val currentBuilder = MediaMetadataCompat.Builder(currentMeta)
-                                            currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
-                                            currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
-                                            mediaSession.setMetadata(currentBuilder.build())
-                                            AALogger.log(TAG, "Proxy: Applied lazy artwork (Coil, ${bitmap.width}x${bitmap.height})")
+                                    if (bitmap != null && pendingBitmapUri == artUri) {
+                                        lastLoadedBitmapUri = artUri
+                                        lastLoadedBitmap = bitmap
+                                        pendingBitmapUri = null
+                                        withContext(Dispatchers.Main) {
+                                            val currentMeta = mediaSession.controller.metadata
+                                            if (currentMeta != null) {
+                                                val currentBuilder = MediaMetadataCompat.Builder(currentMeta)
+                                                currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
+                                                currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                                                mediaSession.setMetadata(currentBuilder.build())
+                                                AALogger.log(TAG, "Proxy: Applied lazy artwork (Coil, ${bitmap.width}x${bitmap.height})")
+                                            }
                                         }
                                     }
-                                } else {
-                                    lastLoadedBitmapUri = null // reset falls fehlgeschlagen
+                                } catch (e: Exception) {
+                                    if (pendingBitmapUri == artUri) {
+                                        pendingBitmapUri = null
+                                    }
+                                    AALogger.log(TAG, "Proxy: Failed to lazily load artwork: ${e.message}")
                                 }
-                            } catch (e: Exception) {
-                                lastLoadedBitmapUri = null
-                                AALogger.log(TAG, "Proxy: Failed to lazily load artwork: ${e.message}")
                             }
                         }
                     }
@@ -873,6 +878,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         private const val SUPPORTED_ACTIONS =
             PlaybackStateCompat.ACTION_PLAY or
             PlaybackStateCompat.ACTION_PAUSE or
+            PlaybackStateCompat.ACTION_STOP or
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
             PlaybackStateCompat.ACTION_SEEK_TO or

@@ -389,44 +389,91 @@ class MetadataFetcher {
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * Searches for a single track via Invidious search API.
+     * Searches for a single track via Invidious search API with fuzzy matching.
      * Returns the first matching video result, or null if nothing found.
      * Used for Google Assistant "Hey Google, play X on YT Playlists" integration.
+     * Handles common speech-to-text errors by trying multiple query variations.
      */
     suspend fun searchTrack(query: String): Track? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Searching for track: $query")
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val queriesToTry = buildSearchQueries(query)
             val instancesToTry = getActiveInstances()
 
-            for (instance in instancesToTry) {
-                val result = executeWithRetry(instance) {
-                    val apiUrl = "$instance/api/v1/search?q=$encodedQuery&type=video&sort_by=relevance"
-                    Log.d(TAG, "Trying search: $apiUrl")
+            for (queryVariant in queriesToTry) {
+                for (instance in instancesToTry) {
+                    val result = executeWithRetry(instance) {
+                        val encodedQuery = URLEncoder.encode(queryVariant, "UTF-8")
+                        val apiUrl = "$instance/api/v1/search?q=$encodedQuery&type=video&sort_by=relevance"
+                        Log.d(TAG, "Trying search: $apiUrl")
 
-                    val response = Jsoup.connect(apiUrl)
-                        .ignoreContentType(true)
-                        .userAgent("Mozilla/5.0")
-                        .timeout(CONNECT_TIMEOUT_MS)
-                        .execute()
+                        val response = Jsoup.connect(apiUrl)
+                            .ignoreContentType(true)
+                            .userAgent("Mozilla/5.0")
+                            .timeout(CONNECT_TIMEOUT_MS)
+                            .execute()
 
-                    val jsonArray = org.json.JSONArray(response.body())
-                    if (jsonArray.length() > 0) {
-                        val first = jsonArray.getJSONObject(0)
-                        val videoId = first.optString("videoId", "")
-                        val title = first.optString("title", "")
-                        val author = first.optString("author", "")
-                        if (videoId.isNotEmpty() && title.isNotEmpty()) {
-                            Track(title, author, videoId)
+                        val jsonArray = org.json.JSONArray(response.body())
+                        if (jsonArray.length() > 0) {
+                            val first = jsonArray.getJSONObject(0)
+                            val videoId = first.optString("videoId", "")
+                            val title = first.optString("title", "")
+                            val author = first.optString("author", "")
+                            if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                                Track(title, author, videoId)
+                            } else null
                         } else null
-                    } else null
+                    }
+                    if (result != null) return@withContext result
                 }
-                if (result != null) return@withContext result
             }
             null
         } catch (e: Exception) {
             Log.e(TAG, "Search failed", e)
             null
         }
+    }
+
+    /**
+     * Builds multiple query variations to handle speech-to-text inaccuracies.
+     * e.g., "ich habe dich" → ["ich habe dich", "ich hab dich", "habe dich", "hab dich"]
+     */
+    private fun buildSearchQueries(original: String): List<String> {
+        val queries = mutableListOf(original)
+        val lower = original.lowercase()
+        
+        val commonReplacements = listOf(
+            "habe" to "hab",
+            " habe" to " hab",
+            "hast" to "has",
+            " hat" to " ",
+            "nicht" to "nich",
+            " dich" to " dich",
+            " mir" to " ",
+            " ich" to " ",
+        )
+        
+        var variant = lower
+        for ((from, to) in commonReplacements) {
+            if (variant.contains(from)) {
+                val newVariant = variant.replace(from, to).trim()
+                if (newVariant.isNotEmpty() && !queries.contains(newVariant)) {
+                    queries.add(newVariant)
+                }
+            }
+        }
+        
+        val words = lower.split("\\s+".toRegex())
+        if (words.size > 2) {
+            val withoutArticles = words.filter { it !in listOf("der", "die", "das", "ein", "eine", "und", "oder", "auf", "zu", "mit") }
+            if (withoutArticles.size < words.size) {
+                val withoutArticlesQuery = withoutArticles.joinToString(" ")
+                if (!queries.contains(withoutArticlesQuery)) {
+                    queries.add(withoutArticlesQuery)
+                }
+            }
+        }
+        
+        return queries.distinct().take(5)
     }
 }

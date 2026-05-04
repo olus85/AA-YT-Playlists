@@ -19,6 +19,9 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE playlistId = :playlistId")
     suspend fun deleteTracksForPlaylist(playlistId: Int)
 
+    @Query("DELETE FROM tracks WHERE playlistId = :playlistId AND videoId = :videoId")
+    suspend fun deleteTrackByVideoId(playlistId: Int, videoId: String)
+
     @Transaction
     suspend fun replaceTracksForPlaylist(playlistId: Int, tracks: List<TrackEntity>) {
         deleteTracksForPlaylist(playlistId)

@@ -195,7 +195,10 @@ class PlaylistViewModel @Inject constructor(
                 metadataFetcher.clearTrackCache(playlist.url)
                 repository.deleteTracksForPlaylist(playlist.id)
 
-                metadataFetcher.fetchTracks(playlist.url)
+                val tracksResult = metadataFetcher.fetchTracks(playlist.url)
+                tracksResult.getOrNull()?.let { tracks ->
+                    repository.saveTracks(playlist.id, tracks)
+                }
 
                 val result = metadataFetcher.fetchMetadata(playlist.url)
                 result.fold(

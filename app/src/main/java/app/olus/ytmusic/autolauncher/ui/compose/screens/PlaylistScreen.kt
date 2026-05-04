@@ -154,6 +154,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showLyricsDialog by remember { mutableStateOf(false) }
     var showJellyfinBrowse by remember { mutableStateOf(false) }
+    var showCoverSearchDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val app = context.applicationContext as YTMusicAutoLauncherApp
@@ -330,6 +331,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                 CompactNowPlayingBar(
                     metadata = currentMetadata,
                     playbackState = currentPlaybackState,
+                    onSearchClick = { showCoverSearchDialog = true },
                     modifier = Modifier.clickable { showLyricsDialog = true }
                 )
             }
@@ -406,6 +408,17 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
             onDismiss = { showLyricsDialog = false }
         )
     }
+
+    if (showCoverSearchDialog) {
+        currentMetadata?.let { metadata ->
+            val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: ""
+            SearchCoverDialog(
+                initialQuery = title,
+                onImageSelected = { /* Could update playlist cover */ },
+                onDismiss = { showCoverSearchDialog = false }
+            )
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -471,6 +484,7 @@ fun NotificationAccessBanner(onGrantClick: () -> Unit) {
 fun CompactNowPlayingBar(
     metadata: android.media.MediaMetadata?,
     playbackState: android.media.session.PlaybackState?,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (metadata == null) return
@@ -532,13 +546,13 @@ fun CompactNowPlayingBar(
             }
             
             Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = if (isPlaying) YTRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                imageVector = Icons.Default.Search,
+                contentDescription = "Cover suchen",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(if (isPlaying) YTRed.copy(alpha = 0.2f) else Color.Transparent)
+                    .clickable { onSearchClick() }
                     .padding(6.dp)
             )
         }
