@@ -110,17 +110,26 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             jellyfinRepository = jellyfinRepository,
             mediaSyncManager = mediaSyncManager,
             onPlaybackStateChange = { isPlaying ->
-                if (isPlaying) {
-                    val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                        .setSmallIcon(R.drawable.ic_launcher_foreground)
-                        .setContentTitle("Wiedergabe aktiv")
-                        .setContentText("Jellyfin")
-                        .setStyle(androidx.media.app.NotificationCompat.MediaStyle().setMediaSession(mediaSession.sessionToken))
-                        .setPriority(NotificationCompat.PRIORITY_LOW)
-                        .build()
-                    startForeground(FOREGROUND_NOTIFICATION_ID, notification)
-                } else {
-                    stopForeground(false) // Don't remove notification immediately to allow resume
+                try {
+                    if (isPlaying) {
+                        ensureNotificationChannel()
+                        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                            .setSmallIcon(R.drawable.ic_launcher_foreground)
+                            .setContentTitle("Wiedergabe aktiv")
+                            .setContentText("Jellyfin")
+                            .setStyle(androidx.media.app.NotificationCompat.MediaStyle().setMediaSession(mediaSession.sessionToken))
+                            .setPriority(NotificationCompat.PRIORITY_LOW)
+                            .build()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(FOREGROUND_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                        } else {
+                            startForeground(FOREGROUND_NOTIFICATION_ID, notification)
+                        }
+                    } else {
+                        stopForeground(false)
+                    }
+                } catch (e: Exception) {
+                    AALogger.logError(TAG, "Error in Jellyfin playback state callback", e)
                 }
             }
         ).apply { initialize() }

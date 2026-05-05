@@ -187,7 +187,5 @@ class MediaSyncManager @Inject constructor(
         else _activeController.value?.transportControls?.seekTo(pos)
     }
 
-    fun hasActiveSession(): Boolean {
-        return _activeController.value != null || (_currentSourceMode.value == SourceMode.JELLYFIN && onJellyfinPlay != null)
-    }
+    fun hasActiveSession(): Boolean = _activeController.value != null || _currentSourceMode.value == SourceMode.JELLYFIN
 }

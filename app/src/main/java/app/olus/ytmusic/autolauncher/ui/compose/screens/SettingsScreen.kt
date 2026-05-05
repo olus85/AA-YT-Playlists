@@ -1,6 +1,9 @@
 package app.olus.ytmusic.autolauncher.ui.compose.screens
 
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +28,8 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,10 +64,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.olus.ytmusic.autolauncher.R
+import app.olus.ytmusic.autolauncher.data.repository.BackupManager
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.ui.compose.theme.YTRed
 import app.olus.ytmusic.autolauncher.util.AALogger
 import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Full settings dialog combining Jellyfin configuration and Diagnostics.
@@ -70,6 +80,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsDialog(
     jellyfinRepository: JellyfinRepository,
+    backupManager: BackupManager,
     onJellyfinConnected: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -443,6 +454,109 @@ fun SettingsDialog(
                             )
                         }
                     }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // ════════════════════════════════════════════
+                // Backup & Restore Section
+                // ════════════════════════════════════════════
+                Text(
+                    "Backup & Restore",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Text(
+                    "Alle Playlists, Einstellungen und Jellyfin-Konfiguration sichern oder wiederherstellen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                var isRestoring by remember { mutableStateOf(false) }
+                var restoreMessage by remember { mutableStateOf<String?>(null) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val backup = backupManager.createBackup()
+                            val json = backupManager.toJson(backup)
+                            val dateFormat = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.getDefault())
+                            val fileName = "aa_yt_playlists_backup_${dateFormat.format(Date())}.json"
+                            val file = File(context.getExternalFilesDir(null), fileName)
+                            file.writeText(json)
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
+                                putExtra(Intent.EXTRA_SUBJECT, "AA YT Playlists Backup")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Backup teilen").apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Backup")
+                    }
+
+                    val restoreLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            try {
+                                val json = context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()
+                                if (json != null) {
+                                    val backup = backupManager.fromJson(json)
+                                    if (backup != null) {
+                                        isRestoring = true
+                                        scope.launch {
+                                            backupManager.restoreBackup(backup)
+                                            isRestoring = false
+                                            restoreMessage = "Wiederherstellung erfolgreich!"
+                                        }
+                                    } else {
+                                        restoreMessage = "Fehler: Ungültiges Backup-Format"
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                restoreMessage = "Fehler: ${e.message}"
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            restoreLauncher.launch("application/json")
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRestoring
+                    ) {
+                        if (isRestoring) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isRestoring) "..." else "Restore")
+                    }
+                }
+
+                restoreMessage?.let { msg ->
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (msg.startsWith("Fehler")) MaterialTheme.colorScheme.error else Color(0xFF4CAF50)
+                    )
                 }
             }
         },

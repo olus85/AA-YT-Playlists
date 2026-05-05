@@ -1,9 +1,11 @@
 package app.olus.ytmusic.autolauncher.di
 
 import android.content.Context
+import android.content.SharedPreferences
 import app.olus.ytmusic.autolauncher.data.local.PlaylistDatabase
 import app.olus.ytmusic.autolauncher.data.local.dao.PlaylistDao
 import app.olus.ytmusic.autolauncher.data.local.dao.TrackDao
+import app.olus.ytmusic.autolauncher.data.repository.BackupManager
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
@@ -62,5 +64,16 @@ object AppModule {
     @Singleton
     fun provideJellyfinRepository(@ApplicationContext context: Context): JellyfinRepository {
         return JellyfinRepository(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBackupManager(
+        @ApplicationContext context: Context,
+        playlistDao: PlaylistDao,
+        trackDao: TrackDao
+    ): BackupManager {
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return BackupManager(context, playlistDao, trackDao, prefs)
     }
 }

@@ -71,7 +71,14 @@ class JellyfinExoPlayerManager(
 
     fun playTracks(tracks: List<JellyfinItem>, startIndex: Int, shuffle: Boolean) {
         val player = exoPlayer ?: return
-        
+
+        if (tracks.isEmpty()) {
+            AALogger.logError(TAG, "playTracks called with empty tracks list")
+            return
+        }
+
+        val validStartIndex = startIndex.coerceIn(0, tracks.size - 1)
+
         val mediaItems = tracks.map { track ->
             val streamUrl = jellyfinRepository.getAudioStreamUrl(track.id)
             val imageUrl = jellyfinRepository.getImageUrl(track.id)
@@ -88,7 +95,7 @@ class JellyfinExoPlayerManager(
                 .build()
         }
 
-        player.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
+        player.setMediaItems(mediaItems, validStartIndex, C.TIME_UNSET)
         player.shuffleModeEnabled = shuffle
         player.prepare()
         player.play()

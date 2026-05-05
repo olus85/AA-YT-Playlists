@@ -383,6 +383,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     if (showSettingsDialog) {
         SettingsDialog(
             jellyfinRepository = viewModel.jellyfinRepository,
+            backupManager = viewModel.backupManager,
             onJellyfinConnected = { /* connection saved internally */ },
             onDismiss = { showSettingsDialog = false }
         )

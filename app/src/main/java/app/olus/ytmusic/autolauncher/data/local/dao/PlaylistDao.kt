@@ -35,6 +35,9 @@ interface PlaylistDao {
     
     @Query("DELETE FROM playlists WHERE id = :id")
     suspend fun deletePlaylistById(id: Int)
+
+    @Query("DELETE FROM playlists")
+    suspend fun deleteAllPlaylists()
     
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlists")
     suspend fun getNextOrderIndex(): Int

@@ -2,6 +2,7 @@ package app.olus.ytmusic.autolauncher.ui.compose.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.olus.ytmusic.autolauncher.data.repository.BackupManager
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinItem
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
@@ -40,7 +41,8 @@ class PlaylistViewModel @Inject constructor(
     private val metadataFetcher: MetadataFetcher,
     val mediaSyncManager: MediaSyncManager,
     private val lyricsFetcher: LyricsFetcher,
-    val jellyfinRepository: JellyfinRepository
+    val jellyfinRepository: JellyfinRepository,
+    val backupManager: BackupManager
 ) : ViewModel() {
 
     val currentMetadata: StateFlow<MediaMetadata?> = mediaSyncManager.currentMetadata

@@ -14,6 +14,9 @@ interface TrackDao {
     suspend fun getTracksForPlaylist(playlistId: Int): List<TrackEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTrack(track: TrackEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTracks(tracks: List<TrackEntity>)
 
     @Query("DELETE FROM tracks WHERE playlistId = :playlistId")
