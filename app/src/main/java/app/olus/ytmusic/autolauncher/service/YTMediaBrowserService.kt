@@ -82,6 +82,10 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     private lateinit var jellyfinNativePlayer: JellyfinExoPlayerManager
 
+    private val imageLoader: coil.ImageLoader by lazy {
+        coil.ImageLoader.Builder(this).build()
+    }
+
     private var lastLoadedBitmapUri: String? = null
     private var lastLoadedBitmap: android.graphics.Bitmap? = null
     private var pendingBitmapUri: String? = null
@@ -793,8 +797,6 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                             pendingBitmapUri = artUri
                             scope.launch(Dispatchers.IO) {
                                 try {
-                                    val imageLoader = coil.ImageLoader.Builder(this@YTMediaBrowserService)
-                                        .build()
                                     val request = coil.request.ImageRequest.Builder(this@YTMediaBrowserService)
                                         .data(artUri)
                                         .size(400)

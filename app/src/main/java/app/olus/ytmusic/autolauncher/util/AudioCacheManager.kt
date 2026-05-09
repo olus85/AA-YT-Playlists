@@ -28,24 +28,23 @@ object AudioCacheManager {
         val maxMb = prefs.getLong(PREF_KEY, DEFAULT_CACHE_SIZE_MB)
         val maxBytes = maxMb * 1024 * 1024
 
-        if (cache != null && currentMaxBytes != maxBytes) {
+        if (cache == null || currentMaxBytes != maxBytes) {
             synchronized(this) {
                 if (currentMaxBytes != maxBytes) {
                     cache?.release()
                     cache = null
                     currentMaxBytes = 0
                 }
-            }
-        }
-
-        return cache ?: synchronized(this) {
-            cache ?: run {
-                createCache(context, maxBytes).also {
-                    cache = it
-                    currentMaxBytes = maxBytes
+                cache ?: run {
+                    createCache(context, maxBytes).also {
+                        cache = it
+                        currentMaxBytes = maxBytes
+                    }
                 }
             }
         }
+
+        return cache!!
     }
 
     private fun createCache(context: Context, maxBytes: Long): SimpleCache {

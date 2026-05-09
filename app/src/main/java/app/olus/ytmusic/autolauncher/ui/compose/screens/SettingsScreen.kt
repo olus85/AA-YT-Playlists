@@ -491,7 +491,7 @@ fun SettingsDialog(
                             file.writeText(json)
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/json"
-                                putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
+                                putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file))
                                 putExtra(Intent.EXTRA_SUBJECT, "AA YT Playlists Backup")
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }

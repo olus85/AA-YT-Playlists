@@ -2,7 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.5.0] - 2026-04-05
+## [2.6.1] - 2026-05-09
+
+### Fixed
+- **Race Condition in AudioCacheManager**: Fixed a data race where two threads could simultaneously enter the synchronized block when `cache != null` and `currentMaxBytes != maxBytes`, potentially causing crashes or resource leaks.
+- **Callback Leak in MediaSyncManager**: Fixed incorrect `unregisterCallback` target. The callback was being unregistered from the old controller after it was already replaced, causing the callback to leak on the old controller.
+- **StateFlow Access Timing in PlaylistViewModel**: Changed `playlists.value` to `playlists.first()` in init block to properly wait for the first emission instead of reading the empty initial value.
+- **ImageLoader Memory Leak in YTMediaBrowserService**: Moved `ImageLoader` creation to a lazy singleton to prevent creating a new instance on every metadata emission.
+- **Deprecated Uri.fromFile() in SettingsScreen**: Replaced `Uri.fromFile()` with `FileProvider.getUriForFile()` to fix `FileUriExposedException` on Android 10+ (scoped storage). Added `file_paths.xml` and provider configuration to AndroidManifest.
+- **Hardcoded Genius API Token**: Moved `GENIUS_ACCESS_TOKEN` from source code to `local.properties` / `BuildConfig` to prevent accidental exposure in version control.
+- **Connection Leak in LyricsFetcher**: Refactored `fetchFromLrclibGet` and `fetchFromLrclibSearch` to use `use {}` blocks and `finally` for proper connection cleanup, preventing leaks on non-200 responses.
+- **Silent No-Ops in JellyfinExoPlayerManager**: Added error logging via `AALogger.logError` when playback callbacks are invoked with a null `exoPlayer`.
+
+## [2.6.0] - 2026-04-15
 
 ### Added
 - **Google Assistant Voice Search** (`onPlayFromSearch`): Say "Hey Google, play [Song] on YT Playlists" to start playback hands-free. The app searches Jellyfin first (if configured), then falls back to Invidious/YouTube. A "Suche: …" status is shown on the car screen while searching.

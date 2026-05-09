@@ -57,7 +57,7 @@ class PlaylistViewModel @Inject constructor(
     // Refresh metadata for playlists missing track count on first load only
     init {
         viewModelScope.launch {
-            val playlistList = playlists.value
+            val playlistList = playlists.first()
             if (playlistList.isNotEmpty()) {
                 playlistList.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
                     refreshPlaylistMetadata(playlist)
@@ -71,7 +71,7 @@ class PlaylistViewModel @Inject constructor(
                     val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
                     val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
                     val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-                    
+
                     if (!title.isNullOrBlank() && !artist.isNullOrBlank()) {
                         _lyricsState.value = LyricsState.Loading
                         _lyricsState.value = lyricsFetcher.fetchLyrics(title, artist, duration)

@@ -107,8 +107,12 @@ class MediaSyncManager @Inject constructor(
     fun setActiveController(controller: MediaController?) {
         AALogger.forceLog(TAG, "setActiveController: ${controller?.packageName ?: "null"}")
 
-        controllerCallback?.let { cb -> _activeController.value?.unregisterCallback(cb) }
+        val oldController = _activeController.value
         _activeController.value = controller
+
+        oldController?.let { old ->
+            controllerCallback?.let { cb -> old.unregisterCallback(cb) }
+        }
 
         if (controller != null) {
             if (_currentSourceMode.value == SourceMode.YOUTUBE) {

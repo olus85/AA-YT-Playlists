@@ -61,12 +61,12 @@ class JellyfinExoPlayerManager(
             })
         }
 
-        mediaSyncManager.onJellyfinPlay = { exoPlayer?.play() }
-        mediaSyncManager.onJellyfinPause = { exoPlayer?.pause() }
-        mediaSyncManager.onJellyfinSkipToNext = { exoPlayer?.seekToNextMediaItem() }
-        mediaSyncManager.onJellyfinSkipToPrevious = { exoPlayer?.seekToPreviousMediaItem() }
-        mediaSyncManager.onJellyfinStop = { exoPlayer?.stop() }
-        mediaSyncManager.onJellyfinSeekTo = { pos -> exoPlayer?.seekTo(pos) }
+        mediaSyncManager.onJellyfinPlay = { exoPlayer?.play() ?: AALogger.logError(TAG, "onJellyfinPlay: exoPlayer is null", null) }
+        mediaSyncManager.onJellyfinPause = { exoPlayer?.pause() ?: AALogger.logError(TAG, "onJellyfinPause: exoPlayer is null", null) }
+        mediaSyncManager.onJellyfinSkipToNext = { exoPlayer?.seekToNextMediaItem() ?: AALogger.logError(TAG, "onJellyfinSkipToNext: exoPlayer is null", null) }
+        mediaSyncManager.onJellyfinSkipToPrevious = { exoPlayer?.seekToPreviousMediaItem() ?: AALogger.logError(TAG, "onJellyfinSkipToPrevious: exoPlayer is null", null) }
+        mediaSyncManager.onJellyfinStop = { exoPlayer?.stop() ?: AALogger.logError(TAG, "onJellyfinStop: exoPlayer is null", null) }
+        mediaSyncManager.onJellyfinSeekTo = { pos -> exoPlayer?.seekTo(pos) ?: AALogger.logError(TAG, "onJellyfinSeekTo: exoPlayer is null", null) }
     }
 
     fun playTracks(tracks: List<JellyfinItem>, startIndex: Int, shuffle: Boolean) {

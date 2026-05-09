@@ -37,9 +37,8 @@ class LyricsFetcher @Inject constructor(
     private val TAG = "LyricsFetcher"
 
     companion object {
-        // Genius API credentials
-        const val GENIUS_ACCESS_TOKEN = "e2IjjnIVsdoFj5k3wb5A8US_r6sPdgM9QVbW9P5Rz2I85Rp7ic_FE4yCiERkcCgm"
     }
+    private val geniusAccessToken: String = app.olus.ytmusic.autolauncher.BuildConfig.GENIUS_ACCESS_TOKEN
 
     /**
      * Main entry point. Fallback chain:
@@ -144,6 +143,7 @@ class LyricsFetcher @Inject constructor(
     // ──────────────────────────────────────────────────────────────
 
     private fun fetchFromLrclibGet(trackName: String, artistName: String, durationMs: Long?): LyricsState? {
+        var connection: HttpURLConnection? = null
         return try {
             val queryBuilder = StringBuilder()
             queryBuilder.append("?track_name=").append(URLEncoder.encode(trackName, "UTF-8"))
@@ -153,22 +153,18 @@ class LyricsFetcher @Inject constructor(
             }
 
             val targetUrl = URL(baseApiUrl + queryBuilder.toString())
-            val connection = targetUrl.openConnection() as HttpURLConnection
+            connection = targetUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("User-Agent", "AA-YT-Playlists-App")
             connection.connectTimeout = 5000
             connection.readTimeout = 5000
 
             val responseCode = connection.responseCode
-            if (responseCode == HttpURLConnection.HTTP_NOT_FOUND || responseCode != HttpURLConnection.HTTP_OK) {
-                connection.disconnect()
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 return null
             }
 
-            val reader = BufferedReader(InputStreamReader(connection.inputStream))
-            val responseText = reader.readText()
-            reader.close()
-            connection.disconnect()
+            val responseText = connection.inputStream.bufferedReader().use { it.readText() }
 
             val json = JSONObject(responseText)
             if (json.has("syncedLyrics") && !json.isNull("syncedLyrics")) {
@@ -183,6 +179,8 @@ class LyricsFetcher @Inject constructor(
         } catch (e: Exception) {
             AALogger.log(TAG, "lrclib/get error: ${e.message}")
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -191,24 +189,21 @@ class LyricsFetcher @Inject constructor(
     // ──────────────────────────────────────────────────────────────
 
     private fun fetchFromLrclibSearch(trackName: String, artistName: String): LyricsState? {
+        var connection: HttpURLConnection? = null
         return try {
             val query = URLEncoder.encode("$artistName $trackName", "UTF-8")
             val targetUrl = URL("$searchApiUrl?q=$query")
-            val connection = targetUrl.openConnection() as HttpURLConnection
+            connection = targetUrl.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("User-Agent", "AA-YT-Playlists-App")
             connection.connectTimeout = 5000
             connection.readTimeout = 5000
 
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                connection.disconnect()
                 return null
             }
 
-            val reader = BufferedReader(InputStreamReader(connection.inputStream))
-            val responseText = reader.readText()
-            reader.close()
-            connection.disconnect()
+            val responseText = connection.inputStream.bufferedReader().use { it.readText() }
 
             val jsonArray = JSONArray(responseText)
             if (jsonArray.length() == 0) return null
@@ -231,6 +226,8 @@ class LyricsFetcher @Inject constructor(
         } catch (e: Exception) {
             AALogger.log(TAG, "lrclib/search error: ${e.message}")
             null
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -390,7 +387,7 @@ class LyricsFetcher @Inject constructor(
             val searchUrl = URL("https://api.genius.com/search?q=$searchQuery")
             val searchConn = searchUrl.openConnection() as HttpURLConnection
             searchConn.requestMethod = "GET"
-            searchConn.setRequestProperty("Authorization", "Bearer $GENIUS_ACCESS_TOKEN")
+            searchConn.setRequestProperty("Authorization", "Bearer $geniusAccessToken")
             searchConn.setRequestProperty("User-Agent", "AA-YT-Playlists-App")
             searchConn.connectTimeout = 8000
             searchConn.readTimeout = 8000
