@@ -4,13 +4,17 @@ import app.olus.ytmusic.autolauncher.data.local.dao.PlaylistDao
 import app.olus.ytmusic.autolauncher.data.local.dao.TrackDao
 import app.olus.ytmusic.autolauncher.data.local.entity.PlaylistEntity
 import app.olus.ytmusic.autolauncher.data.local.entity.TrackEntity
+import app.olus.ytmusic.autolauncher.data.local.PlaylistDatabase
+import androidx.room.withTransaction
 import app.olus.ytmusic.autolauncher.domain.model.Playlist
+import app.olus.ytmusic.autolauncher.domain.model.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class PlaylistRepository(
     private val playlistDao: PlaylistDao,
-    private val trackDao: TrackDao
+    private val trackDao: TrackDao,
+    private val database: PlaylistDatabase
 ) {
     
     fun getAllPlaylists(): Flow<List<Playlist>> {
@@ -64,6 +68,16 @@ class PlaylistRepository(
         }
     }
 
+    suspend fun getAllCachedTracks(): List<Track> {
+        return trackDao.getAllTracks().map { entity ->
+            Track(
+                title = entity.title,
+                author = entity.author,
+                videoId = entity.videoId
+            )
+        }
+    }
+
     suspend fun saveTracks(playlistId: Int, tracks: List<Track>) {
         val entities = tracks.mapIndexed { index, track ->
             TrackEntity(
@@ -74,7 +88,10 @@ class PlaylistRepository(
                 position = index
             )
         }
-        trackDao.replaceTracksForPlaylist(playlistId, entities)
+        database.withTransaction {
+            trackDao.deleteTracksForPlaylist(playlistId)
+            trackDao.insertTracks(entities)
+        }
     }
 
     suspend fun deleteTracksForPlaylist(playlistId: Int) {

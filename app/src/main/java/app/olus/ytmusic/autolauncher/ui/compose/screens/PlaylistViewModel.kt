@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -57,16 +58,20 @@ class PlaylistViewModel @Inject constructor(
     // Refresh metadata for playlists missing track count on first load only
     init {
         viewModelScope.launch {
-            val playlistList = playlists.first()
-            if (playlistList.isNotEmpty()) {
-                playlistList.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
-                    refreshPlaylistMetadata(playlist)
+            try {
+                kotlinx.coroutines.withTimeout(3000L) {
+                    val playlistList = playlists.first { it.isNotEmpty() }
+                    playlistList.filter { it.trackCount == null && it.source == "YOUTUBE" }.forEach { playlist ->
+                        refreshPlaylistMetadata(playlist)
+                    }
                 }
+            } catch (e: Exception) {
+                // Timeout or empty database
             }
         }
 
         viewModelScope.launch {
-            currentMetadata.collect { metadata ->
+            currentMetadata.collectLatest { metadata ->
                 if (metadata != null) {
                     val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
                     val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
@@ -74,7 +79,8 @@ class PlaylistViewModel @Inject constructor(
 
                     if (!title.isNullOrBlank() && !artist.isNullOrBlank()) {
                         _lyricsState.value = LyricsState.Loading
-                        _lyricsState.value = lyricsFetcher.fetchLyrics(title, artist, duration)
+                        val fetched = lyricsFetcher.fetchLyrics(title, artist, duration)
+                        _lyricsState.value = fetched
                     } else {
                         _lyricsState.value = LyricsState.Empty
                     }

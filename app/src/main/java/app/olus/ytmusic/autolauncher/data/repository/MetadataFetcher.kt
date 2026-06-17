@@ -4,11 +4,17 @@ import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import java.net.ConnectException
+import java.net.UnknownHostException
+
+import app.olus.ytmusic.autolauncher.domain.model.Track
 
 private const val TAG = "MetadataFetcher"
 
@@ -17,12 +23,6 @@ data class MetadataResult(
     val imageUrl: String,
     val trackCount: String? = null,
     val duration: String? = null
-)
-
-data class Track(
-    val title: String,
-    val author: String,
-    val videoId: String
 )
 
 class MetadataFetcher {
@@ -37,8 +37,9 @@ class MetadataFetcher {
 
     private var dynamicInstances: List<String> = emptyList()
     private var lastFetchTime = 0L
+    private val instancesMutex = Mutex()
 
-    // In-memory cache for tracks
+    // In-memory cache for tracks (thread-safe via synchronized map)
     private val trackCache = android.util.LruCache<String, List<Track>>(20)
 
     // Retry configuration
@@ -60,9 +61,9 @@ class MetadataFetcher {
         getActiveInstances()
     }
 
-    private suspend fun getActiveInstances(): List<String> {
+    private suspend fun getActiveInstances(): List<String> = instancesMutex.withLock {
         if (dynamicInstances.isNotEmpty() && System.currentTimeMillis() - lastFetchTime < 3600000) {
-            return dynamicInstances
+            return@withLock dynamicInstances
         }
         try {
             Log.d(TAG, "Fetching active Invidious instances...")
@@ -109,7 +110,9 @@ class MetadataFetcher {
     private fun isTransientError(e: Exception): Boolean {
         return when (e) {
             is SocketTimeoutException -> true
-            is org.jsoup.HttpStatusException -> e.statusCode in 500..599
+            is ConnectException -> true
+            is UnknownHostException -> true
+            is org.jsoup.HttpStatusException -> e.statusCode in 429..499 || e.statusCode in 500..599
             else -> e.message?.contains("timeout", ignoreCase = true) == true ||
                     e.message?.contains("connection", ignoreCase = true) == true
         }
@@ -229,9 +232,44 @@ class MetadataFetcher {
                     return@withContext Result.success(result)
                 }
             }
+
+            // Fallback to RSS feed if Invidious yields no tracks
+            val rssResult = fetchTracksFromRssFeed(playlistId)
+            if (rssResult != null) {
+                trackCache.put(playlistId, rssResult)
+                return@withContext Result.success(rssResult)
+            }
+
             Result.failure(Exception("Keine Tracks gefunden."))
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private suspend fun fetchTracksFromRssFeed(playlistId: String): List<Track>? {
+        return executeWithRetry("RSS_TRACKS") {
+            val rssUrl = "https://www.youtube.com/feeds/videos.xml?playlist_id=$playlistId"
+            Log.d(TAG, "Trying RSS for tracks: $rssUrl")
+
+            val doc = Jsoup.connect(rssUrl)
+                .ignoreContentType(true)
+                .userAgent("Mozilla/5.0")
+                .timeout(CONNECT_TIMEOUT_MS)
+                .get()
+
+            val entries = doc.select("entry")
+            if (entries.isEmpty()) return@executeWithRetry null
+
+            val tracks = mutableListOf<Track>()
+            for (entry in entries) {
+                val title = entry.select("title").text()
+                val author = entry.select("author > name").text()
+                val videoId = entry.select("yt|videoId").text()
+                if (title.isNotEmpty() && videoId.isNotEmpty()) {
+                    tracks.add(Track(title, author, videoId))
+                }
+            }
+            if (tracks.isNotEmpty()) tracks else null
         }
     }
 

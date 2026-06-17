@@ -46,14 +46,16 @@ class MediaSyncManager @Inject constructor(
     val currentSourceMode: StateFlow<SourceMode> = _currentSourceMode.asStateFlow()
 
     fun switchSourceMode(mode: SourceMode) {
-        if (_currentSourceMode.value != mode) {
-            _currentSourceMode.value = mode
-            AALogger.forceLog(TAG, "Switched source mode to $mode")
-            // Re-emit known state for the active mode if switching back to YouTube
-            if (mode == SourceMode.YOUTUBE) {
-                _activeController.value?.let { controller ->
-                    _currentMetadata.value = controller.metadata
-                    _currentPlaybackState.value = controller.playbackState
+        synchronized(_currentSourceMode) {
+            if (_currentSourceMode.value != mode) {
+                _currentSourceMode.value = mode
+                AALogger.forceLog(TAG, "Switched source mode to $mode")
+                // Re-emit known state for the active mode if switching back to YouTube
+                if (mode == SourceMode.YOUTUBE) {
+                    _activeController.value?.let { controller ->
+                        _currentMetadata.value = controller.metadata
+                        _currentPlaybackState.value = controller.playbackState
+                    }
                 }
             }
         }
@@ -111,7 +113,8 @@ class MediaSyncManager @Inject constructor(
         _activeController.value = controller
 
         oldController?.let { old ->
-            controllerCallback?.let { cb -> old.unregisterCallback(cb) }
+            val cb = controllerCallback
+            cb?.let { old.unregisterCallback(it) }
         }
 
         if (controller != null) {
@@ -120,7 +123,7 @@ class MediaSyncManager @Inject constructor(
                 _currentPlaybackState.value = controller.playbackState
             }
 
-            controllerCallback = object : MediaController.Callback() {
+            val cb = object : MediaController.Callback() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     if (_currentSourceMode.value == SourceMode.YOUTUBE) {
                         processMetadataUpdate(metadata)
@@ -136,6 +139,9 @@ class MediaSyncManager @Inject constructor(
                     }
                 }
                 override fun onSessionDestroyed() {
+                    _activeController.value?.let { active ->
+                        controllerCallback?.let { cb -> active.unregisterCallback(cb) }
+                    }
                     _activeController.value = null
                     if (_currentSourceMode.value == SourceMode.YOUTUBE) {
                         _currentMetadata.value = null
@@ -143,7 +149,8 @@ class MediaSyncManager @Inject constructor(
                     }
                 }
             }
-            controller.registerCallback(controllerCallback!!)
+            controllerCallback = cb
+            controller.registerCallback(cb)
         } else {
             if (_currentSourceMode.value == SourceMode.YOUTUBE) {
                 _currentMetadata.value = null

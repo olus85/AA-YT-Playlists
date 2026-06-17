@@ -100,14 +100,14 @@ fun SettingsDialog(
     var debugEnabled by remember { mutableStateOf(AALogger.isEnabled) }
 
     // ─── Auto-Lyrics State ───
-    val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-    var autoLyricsEnabled by remember {
+    val prefs = remember(context) { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    var autoLyricsEnabled by remember(prefs) {
         mutableStateOf(prefs.getBoolean("auto_lyrics", false))
     }
 
     // ─── Cache Settings State ───
     val cacheSizeOptions = listOf(100L, 250L, 500L, 1000L) // MB
-    var selectedCacheSize by remember {
+    var selectedCacheSize by remember(prefs) {
         mutableStateOf(prefs.getLong("audio_cache_limit_mb", 500L))
     }
 
@@ -483,21 +483,23 @@ fun SettingsDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            val backup = backupManager.createBackup()
-                            val json = backupManager.toJson(backup)
-                            val dateFormat = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.getDefault())
-                            val fileName = "aa_yt_playlists_backup_${dateFormat.format(Date())}.json"
-                            val file = File(context.getExternalFilesDir(null), fileName)
-                            file.writeText(json)
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/json"
-                                putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file))
-                                putExtra(Intent.EXTRA_SUBJECT, "AA YT Playlists Backup")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            scope.launch {
+                                val backup = backupManager.createBackup()
+                                val json = backupManager.toJson(backup)
+                                val dateFormat = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.getDefault())
+                                val fileName = "aa_yt_playlists_backup_${dateFormat.format(Date())}.json"
+                                val file = File(context.getExternalFilesDir(null), fileName)
+                                file.writeText(json)
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file))
+                                    putExtra(Intent.EXTRA_SUBJECT, "AA YT Playlists Backup")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Backup teilen").apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Backup teilen").apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            })
                         },
                         modifier = Modifier.weight(1f)
                     ) {

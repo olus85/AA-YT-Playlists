@@ -683,19 +683,24 @@ fun DraggablePlaylistList(
     val scope = rememberCoroutineScope()
 
     var displayList by remember { mutableStateOf(playlists) }
-    
+    var isDragging by remember { mutableStateOf(false) }
+
     LaunchedEffect(playlists) {
-        displayList = playlists
+        if (!isDragging) {
+            displayList = playlists
+        }
     }
 
     val state = rememberReorderableLazyListState(
         onMove = { from, to ->
+            isDragging = true
             displayList = displayList.toMutableList().apply {
                 add(to.index, removeAt(from.index))
             }
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         },
         onDragEnd = { startIndex, endIndex ->
+            isDragging = false
             onSaveOrder(displayList)
         }
     )
@@ -798,7 +803,7 @@ fun PlaylistItem(
                     .size(72.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                if (playlist.imageUrl.isNotEmpty()) {
+                if (!playlist.imageUrl.isNullOrEmpty()) {
                     AsyncImage(
                         model = playlist.imageUrl,
                         contentDescription = playlist.title,
@@ -932,7 +937,7 @@ fun EditPlaylistDialog(
     onDismiss: () -> Unit
 ) {
     var newTitle by remember { mutableStateOf(playlist.title) }
-    var newImageUrl by remember { mutableStateOf(playlist.imageUrl) }
+    var newImageUrl by remember { mutableStateOf(playlist.imageUrl ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1175,9 +1180,9 @@ fun SearchCoverDialog(
                 }
 
                 val allImages = mutableListOf<String>()
-                try { allImages.addAll(itunesAlbumDef.await()) } catch (e: Exception) { }
-                try { allImages.addAll(deezerDef.await()) } catch (e: Exception) { }
-                try { allImages.addAll(itunesSongDef.await()) } catch (e: Exception) { }
+                try { allImages.addAll(itunesAlbumDef.await()) } catch (e: Exception) { AALogger.logError("SearchCover: iTunes album fetch failed", e.message ?: e.toString(), e) }
+                try { allImages.addAll(deezerDef.await()) } catch (e: Exception) { AALogger.logError("SearchCover: Deezer fetch failed", e.message ?: e.toString(), e) }
+                try { allImages.addAll(itunesSongDef.await()) } catch (e: Exception) { AALogger.logError("SearchCover: iTunes song fetch failed", e.message ?: e.toString(), e) }
                 
                 withContext(Dispatchers.Main) {
                     results = allImages.distinct()
@@ -1422,10 +1427,11 @@ fun LyricsDialog(
     if (metadata == null) return
 
     val view = androidx.compose.ui.platform.LocalView.current
-    DisposableEffect(view) {
-        view.keepScreenOn = true
+    val viewRef = remember(view) { java.lang.ref.WeakReference(view) }
+    DisposableEffect(viewRef) {
+        viewRef.get()?.keepScreenOn = true
         onDispose {
-            view.keepScreenOn = false
+            viewRef.get()?.keepScreenOn = false
         }
     }
 
@@ -1514,12 +1520,14 @@ fun LyricsDialog(
 
                             if (lyricsState.isSynced) {
                                 LaunchedEffect(playbackState) {
-                                    if (playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING) {
-                                        val startPos = playbackState.position
-                                        val startTime = playbackState.lastPositionUpdateTime
+                                    val state = playbackState
+                                    if (state != null && state.state == android.media.session.PlaybackState.STATE_PLAYING) {
+                                        val startPos = state.position
+                                        val startTime = state.lastPositionUpdateTime
+                                        val speed = state.playbackSpeed
                                         while (isActive) {
                                             val timeDelta = android.os.SystemClock.elapsedRealtime() - startTime
-                                            currentPositionMs = startPos + (timeDelta * playbackState.playbackSpeed).toLong()
+                                            currentPositionMs = startPos + (timeDelta * speed).toLong()
                                             
                                             val activeIndex = lyricsState.lyrics.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
                                             if (activeIndex >= 0 && activeIndex < lyricsState.lyrics.size) {
@@ -1532,7 +1540,7 @@ fun LyricsDialog(
                                             kotlinx.coroutines.delay(100)
                                         }
                                     } else {
-                                        currentPositionMs = playbackState?.position ?: 0L
+                                        currentPositionMs = state?.position ?: 0L
                                     }
                                 }
                             } else {

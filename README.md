@@ -7,7 +7,7 @@ AA YT Playlists is an Android Auto application that allows users to manage and p
 - **Native Media Session Proxy**: Mirrors YouTube Music's playback state (title, artist, album art, progress) directly onto Android Auto's media interface in real time.
 - **Native Media Browser Hierarchy**: Playlists and tracks appear as native browsable/playable media items on the headunit — no templates, no legacy hacks.
 - **Native Jellyfin Playback**: Direct, high-performance integration with self-hosted Jellyfin music servers using `ExoPlayer` (Media3). Stream your private library directly within the app with full background support.
-- **Lyrics Cache (Room DB v5)**: Synchronized lyrics are persistently cached after the first retrieval. Subsequent loads are near-instant (< 50ms) and work entirely offline.
+- **Lyrics Cache (Room DB v6)**: Synchronized lyrics are persistently cached after the first retrieval. Subsequent loads are near-instant (< 50ms) and work entirely offline.
 - **Auto-Lyrics Foregrounding**: Automatically brings the app to the foreground and displays the synchronized lyrics dialog on every track change for a hands-free experience.
 - **Screen Keep-Awake**: Prevents the mobile display from timing out while the lyrics dialog is active.
 - **5-Tier Lyrics Support**: Synchronized lyrics via `NetEase Cloud Music` (Primary), `lrclib` (exact + fuzzy), `Megalobiz` scraping, and `Genius API` plain-text fallback.

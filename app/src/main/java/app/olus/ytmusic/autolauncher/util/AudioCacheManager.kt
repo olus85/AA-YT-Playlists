@@ -21,37 +21,51 @@ object AudioCacheManager {
 
     @Volatile
     private var cache: SimpleCache? = null
+    @Volatile
     private var currentMaxBytes: Long = 0
 
-    fun getCache(context: Context): SimpleCache {
+    fun getCache(context: Context): SimpleCache? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val maxMb = prefs.getLong(PREF_KEY, DEFAULT_CACHE_SIZE_MB)
         val maxBytes = maxMb * 1024 * 1024
 
-        if (cache == null || currentMaxBytes != maxBytes) {
+        var localCache = cache
+        if (localCache == null || currentMaxBytes != maxBytes) {
             synchronized(this) {
                 if (currentMaxBytes != maxBytes) {
                     cache?.release()
                     cache = null
                     currentMaxBytes = 0
                 }
-                cache ?: run {
-                    createCache(context, maxBytes).also {
-                        cache = it
-                        currentMaxBytes = maxBytes
-                    }
+                localCache = cache
+                if (localCache == null) {
+                    localCache = createCache(context, maxBytes)
+                    cache = localCache
+                    currentMaxBytes = if (localCache != null) maxBytes else 0
                 }
             }
         }
-
-        return cache!!
+        return localCache
     }
 
-    private fun createCache(context: Context, maxBytes: Long): SimpleCache {
+    private fun createCache(context: Context, maxBytes: Long): SimpleCache? {
         val cacheDir = File(context.cacheDir, CACHE_DIR_NAME)
         val evictor = LeastRecentlyUsedCacheEvictor(maxBytes)
         val databaseProvider = StandaloneDatabaseProvider(context)
-        return SimpleCache(cacheDir, evictor, databaseProvider)
+        return try {
+            SimpleCache(cacheDir, evictor, databaseProvider)
+        } catch (e: Exception) {
+            AALogger.logError("AudioCacheManager", "Failed to create SimpleCache, deleting directory and retrying...", e)
+            try {
+                if (cacheDir.exists()) {
+                    cacheDir.deleteRecursively()
+                }
+                SimpleCache(cacheDir, evictor, databaseProvider)
+            } catch (ex: Exception) {
+                AALogger.logError("AudioCacheManager", "Failed to recreate SimpleCache after delete", ex)
+                null
+            }
+        }
     }
 
     fun release() {

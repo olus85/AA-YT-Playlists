@@ -15,7 +15,7 @@ import app.olus.ytmusic.autolauncher.data.local.entity.TrackEntity
 
 @Database(
     entities = [PlaylistEntity::class, TrackEntity::class, LyricsEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class PlaylistDatabase : RoomDatabase() {

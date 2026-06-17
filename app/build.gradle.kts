@@ -23,7 +23,7 @@ android {
         minSdk = 23
         targetSdk = 35
         versionCode = 11
-        versionName = "2.6.0"
+        versionName = "2.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GENIUS_ACCESS_TOKEN", "\"${localProperties.getProperty("GENIUS_ACCESS_TOKEN", "")}\"")

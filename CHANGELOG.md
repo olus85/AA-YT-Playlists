@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7.0] - 2026-06-17
+
+### Added
+- **Native YouTube RSS Fallback**: Added a robust native scraper fallback to YouTube's XML feed in `MetadataFetcher` to bypass Invidious API blocks and empty tracklist responses (`"videos": []`) for album playlists.
+- **Universal Cached Track Lookup**: Added query support to retrieve all cached tracks across all playlists from the Room database, used as a fallback to resolve song details and video IDs when the active playlist ID is unknown.
+
+### Changed
+- **Persistent Media Context**: Persisted the active playlist ID in `SharedPreferences` inside `YTMediaBrowserService` to survive service reconstructions and background process deaths.
+- **Artwork URI Propagation**: Ensured the resolved `artUri` is written back to the `MediaMetadataCompat` builder keys (`METADATA_KEY_ART_URI`, `METADATA_KEY_ALBUM_ART_URI`, and `METADATA_KEY_DISPLAY_ICON_URI`) in both initial and lazy image loaders, allowing Android Auto to reliably cache and display cover art.
+
+### Fixed
+- **Room Schema Migration Crash**: Fixed startup crash by incrementing Room DB version to `6` and enabling destructive fallback migration to correctly align schemas after making `PlaylistEntity.imageUrl` nullable.
+- **Artwork Race Condition**: Fixed a race condition where lazy Coil artwork callbacks could overwrite metadata with stale/stuck values by matching URI tags (`pendingBitmapUri == artUri`) and rebuilding the builder from the original correct metadata snapshot.
+- **Android Auto Binder Transaction Overload**: Implemented safe, aspect-ratio-preserving downscaling to `400px` for all covers to prevent `TransactionTooLargeException` in Android Auto IPC.
+- **Missing Cover Art on Cold Starts**: Mapped cover art to all three metadata fields (`METADATA_KEY_ART`, `METADATA_KEY_ALBUM_ART`, `METADATA_KEY_DISPLAY_ICON`) and consolidated fallbacks using whichever bitmap is non-null.
+
 ## [2.6.1] - 2026-05-09
 
 ### Fixed

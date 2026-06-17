@@ -24,7 +24,7 @@ data class BackupPlaylist(
     val id: Int,
     val url: String,
     val title: String,
-    val imageUrl: String,
+    val imageUrl: String?,
     val position: Int,
     val trackCount: String?,
     val duration: String?,
@@ -54,29 +54,25 @@ class BackupManager(
     private val context: Context,
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
-    private val prefs: SharedPreferences
+    private val prefs: SharedPreferences,
+    private val jellyfinRepository: JellyfinRepository
 ) {
-    fun createBackup(): BackupData {
-        val playlists = kotlinx.coroutines.runBlocking {
-            playlistDao.getAllPlaylistsOnce()
-        }
-        val tracks = kotlinx.coroutines.runBlocking {
-            val allTracks = mutableListOf<BackupTrack>()
-            playlists.forEach { playlist ->
-                val playlistTracks = trackDao.getTracksForPlaylist(playlist.id)
-                playlistTracks.forEach { track ->
-                    allTracks.add(
-                        BackupTrack(
-                            playlistId = playlist.id,
-                            title = track.title,
-                            author = track.author,
-                            videoId = track.videoId,
-                            position = track.position
-                        )
+    suspend fun createBackup(): BackupData {
+        val playlists = playlistDao.getAllPlaylistsOnce()
+        val allTracks = mutableListOf<BackupTrack>()
+        playlists.forEach { playlist ->
+            val playlistTracks = trackDao.getTracksForPlaylist(playlist.id)
+            playlistTracks.forEach { track ->
+                allTracks.add(
+                    BackupTrack(
+                        playlistId = playlist.id,
+                        title = track.title,
+                        author = track.author,
+                        videoId = track.videoId,
+                        position = track.position
                     )
-                }
+                )
             }
-            allTracks
         }
 
         val settings = BackupSettings(
@@ -85,11 +81,10 @@ class BackupManager(
         )
 
         val jellyfin = try {
-            val jfRepo = JellyfinRepository(context)
-            if (jfRepo.isConfigured) {
+            if (jellyfinRepository.isConfigured) {
                 BackupJellyfin(
-                    serverUrl = jfRepo.serverUrl,
-                    username = jfRepo.username
+                    serverUrl = jellyfinRepository.serverUrl,
+                    username = jellyfinRepository.username
                 )
             } else null
         } catch (e: Exception) {
@@ -110,7 +105,7 @@ class BackupManager(
                     externalId = p.externalId
                 )
             },
-            tracks = tracks,
+            tracks = allTracks,
             settings = settings,
             jellyfin = jellyfin
         )
@@ -182,7 +177,7 @@ class BackupManager(
                         id = obj.optInt("id", 0),
                         url = obj.optString("url", ""),
                         title = obj.optString("title", ""),
-                        imageUrl = obj.optString("imageUrl", ""),
+                        imageUrl = if (obj.isNull("imageUrl")) null else obj.optString("imageUrl"),
                         position = obj.optInt("position", 0),
                         trackCount = obj.optString("trackCount"),
                         duration = obj.optString("duration"),

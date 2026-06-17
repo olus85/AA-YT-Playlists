@@ -274,16 +274,22 @@ class JellyfinRepository(private val context: Context) {
      */
     fun getImageUrl(itemId: String): String? {
         if (!isConfigured) return null
-        return "$serverUrl/Items/$itemId/Images/Primary?maxWidth=500&quality=90&api_key=$accessToken"
+        return "$serverUrl/Items/$itemId/Images/Primary?maxWidth=500&quality=90"
     }
 
     /**
-     * Builds the direct audio streaming URL for a specific track, including auth parameters.
+     * Builds the direct audio streaming URL for a specific track.
+     * Auth is handled via X-Emby-Authorization header, not in URL.
      */
     fun getAudioStreamUrl(itemId: String): String {
         if (!isConfigured) return ""
-        return "$serverUrl/Audio/$itemId/stream?static=true&UserId=$userId&api_key=$accessToken"
+        return "$serverUrl/Audio/$itemId/stream?static=true&UserId=$userId"
     }
+
+    /**
+     * Returns the Authorization header value for API requests.
+     */
+    private fun getAuthHeader(): String = buildAuthHeader(accessToken)
 
     // ─── Private Helpers ────────────────────────────────────────────────
 

@@ -13,6 +13,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE playlistId = :playlistId ORDER BY position ASC")
     suspend fun getTracksForPlaylist(playlistId: Int): List<TrackEntity>
 
+    @Query("SELECT * FROM tracks")
+    suspend fun getAllTracks(): List<TrackEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrack(track: TrackEntity)
 

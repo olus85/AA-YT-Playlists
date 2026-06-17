@@ -29,12 +29,17 @@ class JellyfinExoPlayerManager(
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
 
-        val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
-            .setCache(AudioCacheManager.getCache(context))
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
-            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val cache = AudioCacheManager.getCache(context)
+        val dataSourceFactory = if (cache != null) {
+            androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } else {
+            httpDataSourceFactory
+        }
 
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
 
         exoPlayer = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -128,7 +133,10 @@ class JellyfinExoPlayerManager(
             item.mediaMetadata.title?.let { metaBuilder.putString(MediaMetadata.METADATA_KEY_TITLE, it.toString()) }
             item.mediaMetadata.artist?.let { metaBuilder.putString(MediaMetadata.METADATA_KEY_ARTIST, it.toString()) }
             item.mediaMetadata.artworkUri?.let { metaBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, it.toString()) }
-            metaBuilder.putLong(MediaMetadata.METADATA_KEY_DURATION, player.duration.coerceAtLeast(0))
+            metaBuilder.putLong(MediaMetadata.METADATA_KEY_DURATION, when {
+                player.duration == C.TIME_UNSET -> 0L
+                else -> player.duration.coerceAtLeast(0)
+            })
         }
 
         mediaSyncManager.updateFromJellyfin(metaBuilder.build(), stateBuilder.build())

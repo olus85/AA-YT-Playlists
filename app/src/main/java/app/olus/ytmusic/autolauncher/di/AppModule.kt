@@ -44,8 +44,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePlaylistRepository(playlistDao: PlaylistDao, trackDao: TrackDao): PlaylistRepository {
-        return PlaylistRepository(playlistDao, trackDao)
+    fun providePlaylistRepository(playlistDao: PlaylistDao, trackDao: TrackDao, database: PlaylistDatabase): PlaylistRepository {
+        return PlaylistRepository(playlistDao, trackDao, database)
     }
 
     @Provides
@@ -71,9 +71,10 @@ object AppModule {
     fun provideBackupManager(
         @ApplicationContext context: Context,
         playlistDao: PlaylistDao,
-        trackDao: TrackDao
+        trackDao: TrackDao,
+        jellyfinRepository: JellyfinRepository
     ): BackupManager {
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return BackupManager(context, playlistDao, trackDao, prefs)
+        return BackupManager(context, playlistDao, trackDao, prefs, jellyfinRepository)
     }
 }

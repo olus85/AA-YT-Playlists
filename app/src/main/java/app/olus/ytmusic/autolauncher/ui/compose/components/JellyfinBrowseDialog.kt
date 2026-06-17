@@ -62,18 +62,16 @@ fun JellyfinBrowseDialog(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        scope.launch {
-            try {
-                items = jellyfinRepository.getMusicItems()
-                if (items.isEmpty()) {
-                    errorMessage = "Keine Musik-Bibliothek gefunden"
-                }
-            } catch (e: Exception) {
-                errorMessage = "Fehler: ${e.message}"
-            } finally {
-                isLoading = false
+    LaunchedEffect(jellyfinRepository) {
+        try {
+            items = jellyfinRepository.getMusicItems()
+            if (items.isEmpty()) {
+                errorMessage = "Keine Musik-Bibliothek gefunden"
             }
+        } catch (e: Exception) {
+            errorMessage = "Fehler: ${e.message}"
+        } finally {
+            isLoading = false
         }
     }
 
@@ -157,7 +155,10 @@ private fun JellyfinItemCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Thumbnail
-            val imageUrl = jellyfinRepository.getImageUrl(item.id)
+            var imageUrl by remember(item.id) { mutableStateOf<String?>(null) }
+            LaunchedEffect(item.id) {
+                imageUrl = jellyfinRepository.getImageUrl(item.id)
+            }
             if (imageUrl != null) {
                 AsyncImage(
                     model = imageUrl,

@@ -22,12 +22,13 @@ import app.olus.ytmusic.autolauncher.data.repository.JellyfinItem
 import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
-import app.olus.ytmusic.autolauncher.data.repository.Track
+import app.olus.ytmusic.autolauncher.domain.model.Track
 import app.olus.ytmusic.autolauncher.util.AALogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -89,6 +90,22 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
     private var lastLoadedBitmapUri: String? = null
     private var lastLoadedBitmap: android.graphics.Bitmap? = null
     private var pendingBitmapUri: String? = null
+    private var activePlaylistId: Int?
+        get() {
+            return try {
+                val id = getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getInt("active_playlist_id", -1)
+                if (id == -1) null else id
+            } catch (e: Exception) {
+                null
+            }
+        }
+        set(value) {
+            try {
+                getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).edit().putInt("active_playlist_id", value ?: -1).apply()
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
 
     private val ytMusicPackages = listOf(
         "app.rvx.android.apps.youtube.music",
@@ -249,17 +266,19 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     result.sendResult(buildTrackItems(playlist, cachedTracks))
 
                     // Refresh in background (don't block the UI)
-                    scope.launch {
-                        try {
-                            val freshResult = withTimeoutOrNull(15_000L) {
-                                metadataFetcher.fetchTracks(playlist.url)
+                    coroutineScope {
+                        launch {
+                            try {
+                                val freshResult = withTimeoutOrNull(15_000L) {
+                                    metadataFetcher.fetchTracks(playlist.url)
+                                }
+                                freshResult?.getOrNull()?.let { freshTracks ->
+                                    repository.saveTracks(id, freshTracks)
+                                    AALogger.log(TAG, "Background refresh: saved ${freshTracks.size} tracks for '${playlist.title}'")
+                                }
+                            } catch (e: Exception) {
+                                AALogger.log(TAG, "Background refresh failed: ${e.message}")
                             }
-                            freshResult?.getOrNull()?.let { freshTracks ->
-                                repository.saveTracks(id, freshTracks)
-                                AALogger.log(TAG, "Background refresh: saved ${freshTracks.size} tracks for '${playlist.title}'")
-                            }
-                        } catch (e: Exception) {
-                            AALogger.log(TAG, "Background refresh failed: ${e.message}")
                         }
                     }
                     return@launch
@@ -485,6 +504,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
     private fun handleShuffleClick(mediaId: String) {
         val id = mediaId.removePrefix("shuffle_").toIntOrNull() ?: return
+        activePlaylistId = id
         beginLaunch()
 
         scope.launch {
@@ -524,6 +544,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         val playlistId = idStr.substring(0, sep).toIntOrNull() ?: return
         val videoId = idStr.substring(sep + 1)
 
+        activePlaylistId = playlistId
         beginLaunch()
 
         scope.launch {
@@ -617,6 +638,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                 // Wait up to 2.5 seconds to see if YT Music reacts
                 val success = withTimeoutOrNull(2500L) {
                     while(true) {
+                        kotlinx.coroutines.yield()
                         val state = mediaSyncManager.currentPlaybackState.value?.state
                         val metaId = mediaSyncManager.currentMetadata.value?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
                         if (metaId != currentId || state == android.media.session.PlaybackState.STATE_BUFFERING || state == android.media.session.PlaybackState.STATE_PLAYING) {
@@ -766,33 +788,67 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)?.let {
                         builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, it)
                     }
-                    val artBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                    val albumArtBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                     
-                    val artUri = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) 
+                    val rawArtBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    val rawAlbumArtBmp = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                    val artBmp = scaleBitmap(rawArtBmp)
+                    val albumArtBmp = scaleBitmap(rawAlbumArtBmp)
+                    
+                    val displayBmp = artBmp ?: albumArtBmp
+                    
+                    var artUri = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) 
                                 ?: metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)
+
+                    if (artUri.isNullOrEmpty()) {
+                        val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
+                        if (!title.isNullOrEmpty()) {
+                            val cleanPlaying = title.lowercase().replace(Regex("[^a-zA-Z0-9\\s]"), "").trim()
+                            var matchingTrack: Track? = null
+                            val playlistId = activePlaylistId
+                            if (playlistId != null) {
+                                val cachedTracks = repository.getCachedTracks(playlistId)
+                                matchingTrack = cachedTracks.firstOrNull { 
+                                    val cleanDb = it.title.lowercase().replace(Regex("[^a-zA-Z0-9\\s]"), "").trim()
+                                    cleanDb.contains(cleanPlaying) || cleanPlaying.contains(cleanDb)
+                                }
+                            }
+                            if (matchingTrack == null) {
+                                val allTracks = repository.getAllCachedTracks()
+                                matchingTrack = allTracks.firstOrNull {
+                                    val cleanDb = it.title.lowercase().replace(Regex("[^a-zA-Z0-9\\s]"), "").trim()
+                                    cleanDb.contains(cleanPlaying) || cleanPlaying.contains(cleanDb)
+                                }
+                            }
+                            if (matchingTrack != null) {
+                                artUri = "https://i.ytimg.com/vi/${matchingTrack.videoId}/hqdefault.jpg"
+                                AALogger.log(TAG, "Proxy: Resolved artwork URI from database track cache: $artUri")
+                            }
+                        }
+                    }
 
                     if (artUri.isNullOrEmpty()) {
                         lastLoadedBitmap = null
                         lastLoadedBitmapUri = null
+                    } else {
+                        builder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri)
+                        builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri)
+                        builder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri)
                     }
 
-                    if (artBmp != null) {
-                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artBmp)
+                    if (displayBmp != null) {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, displayBmp)
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, displayBmp)
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, displayBmp)
                     } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
                         builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, lastLoadedBitmap)
-                    }
-
-                    if (albumArtBmp != null) {
-                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, albumArtBmp)
-                    } else if (lastLoadedBitmapUri == artUri && lastLoadedBitmap != null) {
                         builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, lastLoadedBitmap)
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, lastLoadedBitmap)
                     }
 
                     mediaSession.setMetadata(builder.build())
-                    AALogger.log(TAG, "Proxy: Synced metadata → ${metadata.getString(MediaMetadata.METADATA_KEY_TITLE)}")
+                    AALogger.log(TAG, "Proxy: Synced metadata → ${metadata.getString(MediaMetadata.METADATA_KEY_TITLE)} | displayBmp=${displayBmp != null} (rawArt=${rawArtBmp != null}, rawAlbum=${rawAlbumArtBmp != null}) | artUri=$artUri")
 
-                    if (artBmp == null && albumArtBmp == null && !artUri.isNullOrEmpty()) {
+                    if (displayBmp == null && !artUri.isNullOrEmpty()) {
                         if (lastLoadedBitmapUri != artUri) {
                             pendingBitmapUri = artUri
                             scope.launch(Dispatchers.IO) {
@@ -805,24 +861,45 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                                     val result = imageLoader.execute(request)
                                     val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
 
-                                    if (bitmap != null && pendingBitmapUri == artUri) {
-                                        lastLoadedBitmapUri = artUri
-                                        lastLoadedBitmap = bitmap
-                                        pendingBitmapUri = null
+                                    if (bitmap != null) {
                                         withContext(Dispatchers.Main) {
-                                            val currentMeta = mediaSession.controller.metadata
-                                            if (currentMeta != null) {
-                                                val currentBuilder = MediaMetadataCompat.Builder(currentMeta)
+                                            if (pendingBitmapUri == artUri) {
+                                                lastLoadedBitmapUri = artUri
+                                                lastLoadedBitmap = bitmap
+                                                pendingBitmapUri = null
+                                                
+                                                val currentBuilder = MediaMetadataCompat.Builder()
+                                                metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.let {
+                                                    currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_TITLE, it)
+                                                }
+                                                metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.let {
+                                                    currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, it)
+                                                }
+                                                metadata.getString(MediaMetadata.METADATA_KEY_ALBUM)?.let {
+                                                    currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, it)
+                                                }
+                                                metadata.getLong(MediaMetadata.METADATA_KEY_DURATION).let {
+                                                    if (it > 0) currentBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, it)
+                                                }
+                                                
+                                                currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri)
+                                                currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri)
+                                                currentBuilder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri)
+                                                
                                                 currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
                                                 currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+                                                currentBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap)
+                                                
                                                 mediaSession.setMetadata(currentBuilder.build())
                                                 AALogger.log(TAG, "Proxy: Applied lazy artwork (Coil, ${bitmap.width}x${bitmap.height})")
                                             }
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    if (pendingBitmapUri == artUri) {
-                                        pendingBitmapUri = null
+                                    withContext(Dispatchers.Main) {
+                                        if (pendingBitmapUri == artUri) {
+                                            pendingBitmapUri = null
+                                        }
                                     }
                                     AALogger.log(TAG, "Proxy: Failed to lazily load artwork: ${e.message}")
                                 }
@@ -883,6 +960,25 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         android.media.session.PlaybackState.STATE_FAST_FORWARDING -> PlaybackStateCompat.STATE_FAST_FORWARDING
         android.media.session.PlaybackState.STATE_REWINDING -> PlaybackStateCompat.STATE_REWINDING
         else -> PlaybackStateCompat.STATE_NONE
+    }
+
+    private fun scaleBitmap(bitmap: android.graphics.Bitmap?, maxDimension: Int = 400): android.graphics.Bitmap? {
+        if (bitmap == null) return null
+        if (bitmap.width <= maxDimension && bitmap.height <= maxDimension) return bitmap
+        val width = bitmap.width
+        val height = bitmap.height
+        val ratio = width.toFloat() / height.toFloat()
+        val (newWidth, newHeight) = if (ratio > 1) {
+            maxDimension to (maxDimension / ratio).toInt()
+        } else {
+            (maxDimension * ratio).toInt() to maxDimension
+        }
+        return try {
+            android.graphics.Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        } catch (e: Exception) {
+            AALogger.logError(TAG, "Failed to scale bitmap", e)
+            bitmap
+        }
     }
 
     companion object {

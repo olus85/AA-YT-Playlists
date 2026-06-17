@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import app.olus.ytmusic.autolauncher.util.AALogger
@@ -86,7 +88,9 @@ class YTMediaProxyService : NotificationListenerService() {
             }
         }
         sessionsChangedListener = null
-        mediaSyncManager?.setActiveController(null)
+        Handler(Looper.getMainLooper()).post {
+            mediaSyncManager?.setActiveController(null)
+        }
     }
 
     private fun findAndBindYTMusicSession(controllers: List<MediaController>?) {
