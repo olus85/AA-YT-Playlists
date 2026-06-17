@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.0] - 2026-06-18
+
+### Added
+- **Robust HTML Scraping Fallback**: Added a native `HttpURLConnection`-based HTML scraper to `MetadataFetcher.kt`. This retrieves the playlist page by setting a minimal User-Agent, completely bypassing the European GDPR consent wall (`https://consent.youtube.com/...`). Tracks are parsed from the embedded `ytInitialData` JSON, supporting both the traditional `playlistVideoRenderer` and new `lockupViewModel` desktop layouts.
+- **App Renaming to "Playlist Launcher"**: Renamed the application name in `strings.xml` to "Playlist Launcher". This resolves Google Assistant and Gemini voice routing conflicts with the official YouTube Music app.
+
+### Changed
+- **Invidious Timeout Optimization**: Limited Invidious API instance attempts to `take(2)` to prevent long delays and timeouts when public instances are rate-limited or offline.
+
 ## [2.7.0] - 2026-06-17
 
 ### Added

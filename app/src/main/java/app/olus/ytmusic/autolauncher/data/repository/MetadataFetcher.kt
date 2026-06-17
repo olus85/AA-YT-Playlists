@@ -165,6 +165,13 @@ class MetadataFetcher {
                 return@withContext Result.success(invResult)
             }
 
+            // Strategy 1.5: HTML Scraping Fallback
+            val htmlResult = fetchMetadataFromHtml(playlistId)
+            if (htmlResult != null) {
+                Log.d(TAG, "HTML metadata success: ${htmlResult.title}, ${htmlResult.trackCount}")
+                return@withContext Result.success(htmlResult)
+            }
+
             // Strategy 2: oEmbed API (works for videos, sometimes for playlists)
             val oEmbedResult = fetchFromOEmbed(url)
             if (oEmbedResult != null) {
@@ -200,7 +207,7 @@ class MetadataFetcher {
                 return@withContext Result.success(cached)
             }
 
-            val instancesToTry = getActiveInstances()
+            val instancesToTry = getActiveInstances().take(2)
             for (instance in instancesToTry) {
                 val result = executeWithRetry(instance) {
                     val apiUrl = "$instance/api/v1/playlists/$playlistId"
@@ -233,6 +240,13 @@ class MetadataFetcher {
                 }
             }
 
+            // Fallback to HTML scraping before RSS
+            val htmlResult = fetchTracksFromHtml(playlistId)
+            if (htmlResult != null) {
+                trackCache.put(playlistId, htmlResult)
+                return@withContext Result.success(htmlResult)
+            }
+
             // Fallback to RSS feed if Invidious yields no tracks
             val rssResult = fetchTracksFromRssFeed(playlistId)
             if (rssResult != null) {
@@ -244,6 +258,372 @@ class MetadataFetcher {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private suspend fun fetchTracksFromHtml(playlistId: String): List<Track>? {
+        return executeWithRetry("HTML_TRACKS") {
+            val url = "https://www.youtube.com/playlist?list=$playlistId"
+            Log.d(TAG, "Trying HTML scraping for tracks: $playlistId")
+
+            val html = fetchHtmlWithConnection(url) ?: return@executeWithRetry null
+            val doc = Jsoup.parse(html)
+            Log.d(TAG, "HTML Page Title: '${doc.title()}'")
+            var jsonStr: String? = null
+            
+            val scriptElements = doc.select("script")
+            Log.d(TAG, "HTML script elements count: ${scriptElements.size}")
+            for (script in scriptElements) {
+                val data = script.html()
+                if (data.contains("ytInitialData")) {
+                    Log.d(TAG, "Found ytInitialData script of length ${data.length}")
+                    jsonStr = extractJsonFromScript(data, "ytInitialData")
+                    if (jsonStr != null) {
+                        Log.d(TAG, "Successfully extracted JSON of length ${jsonStr.length}")
+                        break
+                    } else {
+                        Log.w(TAG, "extractJsonFromScript returned null")
+                    }
+                }
+            }
+
+            if (jsonStr == null) {
+                Log.w(TAG, "ytInitialData not found in HTML")
+                return@executeWithRetry null
+            }
+
+            val json = JSONObject(jsonStr)
+            val tracks = mutableListOf<Track>()
+
+            // 1. Try walking the standard path for items
+            val contents = json.optJSONObject("contents")
+            val twoColumnBrowseResultsRenderer = contents?.optJSONObject("twoColumnBrowseResultsRenderer")
+            val tabs = twoColumnBrowseResultsRenderer?.optJSONArray("tabs")
+            val firstTab = tabs?.optJSONObject(0)
+            val tabRenderer = firstTab?.optJSONObject("tabRenderer")
+            val tabContent = tabRenderer?.optJSONObject("content")
+            val sectionListRenderer = tabContent?.optJSONObject("sectionListRenderer")
+            val sectionContents = sectionListRenderer?.optJSONArray("contents")
+            val firstSectionContent = sectionContents?.optJSONObject(0)
+            val itemSectionRenderer = firstSectionContent?.optJSONObject("itemSectionRenderer")
+            val itemContents = itemSectionRenderer?.optJSONArray("contents")
+
+            if (itemContents != null && itemContents.length() > 0) {
+                for (i in 0 until itemContents.length()) {
+                    val item = itemContents.optJSONObject(i) ?: continue
+                    
+                    // Try parsing new layout: lockupViewModel
+                    val lockup = item.optJSONObject("lockupViewModel")
+                    if (lockup != null) {
+                        val videoId = lockup.optString("contentId")
+                        val meta = lockup.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                        val title = meta?.optJSONObject("title")?.optString("content", "") ?: ""
+                        var artist = ""
+                        val rows = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+                        if (rows != null && rows.length() > 0) {
+                            val parts = rows.optJSONObject(0)?.optJSONArray("metadataParts")
+                            if (parts != null && parts.length() > 0) {
+                                artist = parts.optJSONObject(0)?.optJSONObject("text")?.optString("content", "") ?: ""
+                            }
+                        }
+                        if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                            tracks.add(Track(title, artist, videoId))
+                        }
+                        continue
+                    }
+                    
+                    // Try parsing old layout: playlistVideoRenderer
+                    val playlistVideoRenderer = item.optJSONObject("playlistVideoRenderer")
+                    if (playlistVideoRenderer != null) {
+                        val videoId = playlistVideoRenderer.optString("videoId")
+                        var title = ""
+                        val titleObj = playlistVideoRenderer.optJSONObject("title")
+                        val titleRuns = titleObj?.optJSONArray("runs")
+                        if (titleRuns != null && titleRuns.length() > 0) {
+                            title = titleRuns.optJSONObject(0)?.optString("text", "") ?: ""
+                        } else {
+                            title = titleObj?.optString("simpleText", "") ?: ""
+                        }
+                        
+                        var artist = ""
+                        val bylineObj = playlistVideoRenderer.optJSONObject("shortBylineText")
+                        val bylineRuns = bylineObj?.optJSONArray("runs")
+                        if (bylineRuns != null && bylineRuns.length() > 0) {
+                            artist = bylineRuns.optJSONObject(0)?.optString("text", "") ?: ""
+                        } else {
+                            artist = bylineObj?.optString("simpleText", "") ?: ""
+                        }
+
+                        if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                            tracks.add(Track(title, artist, videoId))
+                        }
+                    }
+                }
+            }
+
+            // Fallback 1: Deep search for playlistVideoListRenderer
+            if (tracks.isEmpty()) {
+                val listRenderer = findKeyRecursively(json, "playlistVideoListRenderer") as? JSONObject
+                val videoContents = listRenderer?.optJSONArray("contents")
+                if (videoContents != null) {
+                    for (i in 0 until videoContents.length()) {
+                        val videoItem = videoContents.optJSONObject(i)
+                        val playlistVideoRenderer = videoItem?.optJSONObject("playlistVideoRenderer")
+                        if (playlistVideoRenderer != null) {
+                            val videoId = playlistVideoRenderer.optString("videoId")
+                            val titleObj = playlistVideoRenderer.optJSONObject("title")
+                            val titleRuns = titleObj?.optJSONArray("runs")
+                            val title = if (titleRuns != null && titleRuns.length() > 0) {
+                                titleRuns.optJSONObject(0)?.optString("text", "") ?: ""
+                            } else {
+                                titleObj?.optString("simpleText", "") ?: ""
+                            }
+                            
+                            val bylineObj = playlistVideoRenderer.optJSONObject("shortBylineText")
+                            val bylineRuns = bylineObj?.optJSONArray("runs")
+                            val artist = if (bylineRuns != null && bylineRuns.length() > 0) {
+                                bylineRuns.optJSONObject(0)?.optString("text", "") ?: ""
+                            } else {
+                                bylineObj?.optString("simpleText", "") ?: ""
+                            }
+
+                            if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                                tracks.add(Track(title, artist, videoId))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback 2: Deep search for all lockupViewModels
+            if (tracks.isEmpty()) {
+                val allLockups = findAllKeysRecursively(json, "lockupViewModel")
+                for (lockupObj in allLockups) {
+                    if (lockupObj is JSONObject) {
+                        val videoId = lockupObj.optString("contentId")
+                        val meta = lockupObj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                        val title = meta?.optJSONObject("title")?.optString("content", "") ?: ""
+                        var artist = ""
+                        val rows = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+                        if (rows != null && rows.length() > 0) {
+                            val parts = rows.optJSONObject(0)?.optJSONArray("metadataParts")
+                            if (parts != null && parts.length() > 0) {
+                                artist = parts.optJSONObject(0)?.optJSONObject("text")?.optString("content", "") ?: ""
+                            }
+                        }
+                        if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                            val t = Track(title, artist, videoId)
+                            if (!tracks.any { it.videoId == videoId }) {
+                                tracks.add(t)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (tracks.isNotEmpty()) tracks else null
+        }
+    }
+
+    private suspend fun fetchMetadataFromHtml(playlistId: String): MetadataResult? {
+        return executeWithRetry("HTML_METADATA") {
+            val url = "https://www.youtube.com/playlist?list=$playlistId"
+            Log.d(TAG, "Trying HTML scraping for metadata: $playlistId")
+
+            val html = fetchHtmlWithConnection(url) ?: return@executeWithRetry null
+            val doc = Jsoup.parse(html)
+            var jsonStr: String? = null
+            
+            val scriptElements = doc.select("script")
+            for (script in scriptElements) {
+                val data = script.html()
+                if (data.contains("ytInitialData")) {
+                    jsonStr = extractJsonFromScript(data, "ytInitialData")
+                    if (jsonStr != null) break
+                }
+            }
+
+            if (jsonStr == null) {
+                Log.w(TAG, "ytInitialData script not found in HTML metadata")
+                return@executeWithRetry null
+            }
+
+            val json = JSONObject(jsonStr)
+
+            // Extract title and thumbnail from microformat
+            val microformat = json.optJSONObject("microformat")?.optJSONObject("microformatDataRenderer")
+            val title = microformat?.optString("title", "") ?: ""
+            
+            val thumbnails = microformat?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            var imageUrl = ""
+            if (thumbnails != null && thumbnails.length() > 0) {
+                imageUrl = thumbnails.optJSONObject(0)?.optString("url", "") ?: ""
+            }
+
+            // Extract trackCount
+            var trackCount: String? = null
+            
+            val sidebar = json.optJSONObject("sidebar")?.optJSONObject("playlistSidebarRenderer")
+            val sidebarItems = sidebar?.optJSONArray("items")
+            if (sidebarItems != null && sidebarItems.length() > 0) {
+                val primaryInfo = sidebarItems.optJSONObject(0)?.optJSONObject("playlistSidebarPrimaryInfoRenderer")
+                val stats = primaryInfo?.optJSONArray("stats")
+                if (stats != null && stats.length() > 0) {
+                    val countText = stats.optJSONObject(0)?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    if (countText != null) {
+                        trackCount = "$countText Songs"
+                    }
+                }
+            }
+            
+            if (trackCount == null) {
+                val header = json.optJSONObject("header")?.optJSONObject("pageHeaderRenderer")
+                val contentVM = header?.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
+                val rows = contentVM?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+                if (rows != null && rows.length() > 1) {
+                    val parts = rows.optJSONObject(1)?.optJSONArray("metadataParts")
+                    if (parts != null && parts.length() > 0) {
+                        val countText = parts.optJSONObject(parts.length() - 1)?.optJSONObject("text")?.optString("content")
+                        if (countText != null) {
+                            trackCount = countText
+                        }
+                    }
+                }
+            }
+
+            // Extract author
+            var author: String? = null
+            if (sidebarItems != null && sidebarItems.length() > 1) {
+                val secondaryInfo = sidebarItems.optJSONObject(1)?.optJSONObject("playlistSidebarSecondaryInfoRenderer")
+                val owner = secondaryInfo?.optJSONObject("videoOwner")?.optJSONObject("videoOwnerRenderer")
+                val ownerRuns = owner?.optJSONObject("title")?.optJSONArray("runs")
+                if (ownerRuns != null && ownerRuns.length() > 0) {
+                    author = ownerRuns.optJSONObject(0)?.optString("text")
+                }
+            }
+
+            if (author == null) {
+                val header = json.optJSONObject("header")?.optJSONObject("pageHeaderRenderer")
+                val contentVM = header?.optJSONObject("content")?.optJSONObject("pageHeaderViewModel")
+                val rows = contentVM?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+                if (rows != null && rows.length() > 0) {
+                    val parts = rows.optJSONObject(0)?.optJSONArray("metadataParts")
+                    if (parts != null && parts.length() > 0) {
+                        author = parts.optJSONObject(0)?.optJSONObject("avatarStack")?.optJSONObject("avatarStackViewModel")?.optJSONObject("text")?.optString("content")
+                        if (author != null && author.startsWith("von ")) {
+                            author = author.substring(4)
+                        }
+                    }
+                }
+            }
+
+            if (title.isNotEmpty()) {
+                val bestThumb = upgradeImageResolution(imageUrl)
+                MetadataResult(title, bestThumb, trackCount, author)
+            } else null
+        }
+    }
+
+    private fun fetchHtmlWithConnection(urlStr: String): String? {
+        var conn: java.net.HttpURLConnection? = null
+        return try {
+            val url = java.net.URL(urlStr)
+            conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = CONNECT_TIMEOUT_MS
+            conn.readTimeout = CONNECT_TIMEOUT_MS
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching HTML via HttpURLConnection for $urlStr", e)
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    private fun extractJsonFromScript(scriptData: String, startKey: String): String? {
+        val index = scriptData.indexOf(startKey)
+        if (index == -1) return null
+        val braceIndex = scriptData.indexOf('{', index)
+        if (braceIndex == -1) return null
+        
+        var openBrackets = 0
+        var inString = false
+        var stringChar = '"'
+        var escape = false
+        
+        for (i in braceIndex until scriptData.length) {
+            val c = scriptData[i]
+            if (escape) {
+                escape = false
+                continue
+            }
+            if (c == '\\') {
+                escape = true
+                continue
+            }
+            if (c == '"' || c == '\'') {
+                if (!inString) {
+                    inString = true
+                    stringChar = c
+                } else if (c == stringChar) {
+                    inString = false
+                }
+                continue
+            }
+            if (!inString) {
+                if (c == '{') {
+                    openBrackets++
+                } else if (c == '}') {
+                    openBrackets--
+                    if (openBrackets == 0) {
+                        return scriptData.substring(braceIndex, i + 1)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findKeyRecursively(json: Any, key: String): Any? {
+        if (json is JSONObject) {
+            if (json.has(key)) {
+                return json.get(key)
+            }
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val value = json.get(k)
+                val found = findKeyRecursively(value, key)
+                if (found != null) return found
+            }
+        } else if (json is org.json.JSONArray) {
+            for (i in 0 until json.length()) {
+                val value = json.get(i)
+                val found = findKeyRecursively(value, key)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun findAllKeysRecursively(json: Any, key: String, results: MutableList<Any> = mutableListOf()): List<Any> {
+        if (json is JSONObject) {
+            if (json.has(key)) {
+                results.add(json.get(key))
+            }
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val value = json.get(k)
+                findAllKeysRecursively(value, key, results)
+            }
+        } else if (json is org.json.JSONArray) {
+            for (i in 0 until json.length()) {
+                val value = json.get(i)
+                findAllKeysRecursively(value, key, results)
+            }
+        }
+        return results
     }
 
     private suspend fun fetchTracksFromRssFeed(playlistId: String): List<Track>? {
@@ -469,6 +849,53 @@ class MetadataFetcher {
         } catch (e: Exception) {
             Log.e(TAG, "Search failed", e)
             null
+        }
+    }
+
+    /**
+     * Searches for multiple tracks via Invidious search API.
+     * Returns up to `limit` matching video results.
+     */
+    suspend fun searchTracks(query: String, limit: Int = 15): List<Track> = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Searching for tracks: $query")
+            val queriesToTry = buildSearchQueries(query)
+            val instancesToTry = getActiveInstances()
+
+            for (queryVariant in queriesToTry) {
+                for (instance in instancesToTry) {
+                    val result = executeWithRetry(instance) {
+                        val encodedQuery = URLEncoder.encode(queryVariant, "UTF-8")
+                        val apiUrl = "$instance/api/v1/search?q=$encodedQuery&type=video&sort_by=relevance"
+                        Log.d(TAG, "Trying search: $apiUrl")
+
+                        val response = Jsoup.connect(apiUrl)
+                            .ignoreContentType(true)
+                            .userAgent("Mozilla/5.0")
+                            .timeout(CONNECT_TIMEOUT_MS)
+                            .execute()
+
+                        val jsonArray = org.json.JSONArray(response.body())
+                        val tracks = mutableListOf<Track>()
+                        val count = minOf(jsonArray.length(), limit)
+                        for (i in 0 until count) {
+                            val obj = jsonArray.getJSONObject(i)
+                            val videoId = obj.optString("videoId", "")
+                            val title = obj.optString("title", "")
+                            val author = obj.optString("author", "")
+                            if (videoId.isNotEmpty() && title.isNotEmpty()) {
+                                tracks.add(Track(title, author, videoId))
+                            }
+                        }
+                        tracks
+                    }
+                    if (!result.isNullOrEmpty()) return@withContext result
+                }
+            }
+            emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Search tracks failed", e)
+            emptyList()
         }
     }
 

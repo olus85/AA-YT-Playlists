@@ -68,6 +68,7 @@ class MediaSyncManager @Inject constructor(
     var onJellyfinSkipToPrevious: (() -> Unit)? = null
     var onJellyfinStop: (() -> Unit)? = null
     var onJellyfinSeekTo: ((Long) -> Unit)? = null
+    var onPlayJellyfinTrack: ((Int, String) -> Unit)? = null
 
     private fun processMetadataUpdate(newMetadata: MediaMetadata?) {
         val oldTitle = _currentMetadata.value?.getString(MediaMetadata.METADATA_KEY_TITLE)

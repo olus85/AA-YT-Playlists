@@ -43,4 +43,30 @@ class MetadataFetcherTest {
         val url = "https://youtube.com/watch?v=abcd" // No list param
         assertNull(fetcher.extractPlaylistId(url))
     }
+
+    @Test
+    fun testFetchTracks_LZK() = kotlinx.coroutines.runBlocking {
+        val url = "https://www.youtube.com/playlist?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5"
+        
+        val result = fetcher.fetchTracks(url)
+        assert(result.isSuccess)
+        val tracks = result.getOrNull()
+        println("LZK tracks size: ${tracks?.size}")
+        assertEquals(66, tracks?.size)
+        
+        val firstTrack = tracks?.get(0)
+        assertEquals("XgJKOXCTU6g", firstTrack?.videoId)
+        assertEquals("Ich glaub ich", firstTrack?.title)
+    }
+
+    @Test
+    fun testFetchMetadata_LZK() = kotlinx.coroutines.runBlocking {
+        val url = "https://music.youtube.com/playlist?list=PL6Ui4jEbpx7DthiT2IKtQMyl6HadG6-_5"
+        val result = fetcher.fetchMetadata(url)
+        assert(result.isSuccess)
+        val meta = result.getOrNull()
+        println("LZK title: ${meta?.title}, trackCount: ${meta?.trackCount}, author: ${meta?.duration}")
+        assertEquals("LZK", meta?.title)
+        assertEquals("66 Songs", meta?.trackCount)
+    }
 }

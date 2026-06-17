@@ -3,6 +3,12 @@ package app.olus.ytmusic.autolauncher.ui.compose.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.speech.RecognizerIntent
+import android.app.Activity
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Mic
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -47,6 +53,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -56,9 +66,12 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import app.olus.ytmusic.autolauncher.ui.compose.theme.YTAccentBlue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -159,6 +172,37 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
     val context = LocalContext.current
     val app = context.applicationContext as YTMusicAutoLauncherApp
 
+    val showSearchDialog by viewModel.showSearchDialog.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val isSearchingLocal by viewModel.isSearchingLocal.collectAsState()
+    val localSearchResults by viewModel.localSearchResults.collectAsState()
+    val isSearchingYT by viewModel.isSearchingYT.collectAsState()
+    val ytSearchResults by viewModel.ytSearchResults.collectAsState()
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                viewModel.openSearchDialog(spokenText)
+            }
+        }
+    }
+
+    val startVoiceSearch = {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PROMPT, context.getString(R.string.voice_search_prompt))
+            }
+            speechLauncher.launch(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, context.getString(R.string.voice_search_not_available), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Handle shared URL from intent
     LaunchedEffect(Unit) {
         app.sharedUrlToProcess?.let { url ->
@@ -220,6 +264,13 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                             )
                         }
                     }
+                    IconButton(onClick = { startVoiceSearch() }) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = stringResource(R.string.voice_search),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -246,7 +297,7 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                     .padding(
                         bottom = WindowInsets.navigationBars
                             .asPaddingValues()
-                            .calculateBottomPadding()
+                            .calculateBottomPadding() + 88.dp
                     )
                     .shadow(12.dp, CircleShape)
             ) {
@@ -327,14 +378,23 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
                 }
             }
             // Compact Now Playing Bar
-            if (currentMetadata != null) {
-                CompactNowPlayingBar(
-                    metadata = currentMetadata,
-                    playbackState = currentPlaybackState,
-                    onSearchClick = { showCoverSearchDialog = true },
-                    modifier = Modifier.clickable { showLyricsDialog = true }
-                )
-            }
+            CompactNowPlayingBar(
+                metadata = currentMetadata,
+                playbackState = currentPlaybackState,
+                onPlayClick = { viewModel.mediaSyncManager.play() },
+                onPauseClick = { viewModel.mediaSyncManager.pause() },
+                onNextClick = { viewModel.mediaSyncManager.skipToNext() },
+                onPrevClick = { viewModel.mediaSyncManager.skipToPrevious() },
+                onMicClick = { startVoiceSearch() },
+                onSearchClick = { showCoverSearchDialog = true },
+                modifier = Modifier.clickable { 
+                    if (currentMetadata != null) {
+                        showLyricsDialog = true 
+                    } else {
+                        startVoiceSearch()
+                    }
+                }
+            )
         } // End of Column
     }
 
@@ -420,6 +480,14 @@ fun PlaylistScreen(viewModel: PlaylistViewModel) {
             )
         }
     }
+
+    if (showSearchDialog) {
+        VoiceSearchDialog(
+            viewModel = viewModel,
+            onStartVoiceSearch = { startVoiceSearch() },
+            onDismiss = { viewModel.closeSearchDialog() }
+        )
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -485,14 +553,17 @@ fun NotificationAccessBanner(onGrantClick: () -> Unit) {
 fun CompactNowPlayingBar(
     metadata: android.media.MediaMetadata?,
     playbackState: android.media.session.PlaybackState?,
-    onSearchClick: () -> Unit = {},
+    onPlayClick: () -> Unit,
+    onPauseClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onPrevClick: () -> Unit,
+    onMicClick: () -> Unit,
+    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (metadata == null) return
-    
-    val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "Unbekannt"
-    val artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: "Unbekannt"
-    val artUri = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
+    val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: stringResource(R.string.no_playback_active)
+    val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: stringResource(R.string.tap_to_search)
+    val artUri = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI)
     val isPlaying = playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
 
     Card(
@@ -524,10 +595,14 @@ fun CompactNowPlayingBar(
                     .background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        imageVector = if (metadata == null) Icons.Default.Mic else Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = if (metadata == null) YTRed else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -546,16 +621,77 @@ fun CompactNowPlayingBar(
                 )
             }
             
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = "Cover suchen",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .clickable { onSearchClick() }
-                    .padding(6.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (metadata != null) {
+                    IconButton(
+                        onClick = onPrevClick,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Vorheriges Lied",
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = { if (isPlaying) onPauseClick() else onPlayClick() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = onNextClick,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Nächstes Lied",
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onMicClick,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(YTRed.copy(alpha = 0.12f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Sprachsuche",
+                        modifier = Modifier.size(22.dp),
+                        tint = YTRed
+                    )
+                }
+                
+                if (metadata != null) {
+                    IconButton(
+                        onClick = onSearchClick,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Cover suchen",
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1589,4 +1725,262 @@ fun LyricsDialog(
             } // Column
         } // Box Background
     }
+}
+
+@Composable
+fun VoiceSearchDialog(
+    viewModel: PlaylistViewModel,
+    onStartVoiceSearch: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val query by viewModel.searchQuery.collectAsState()
+    val isSearchingLocal by viewModel.isSearchingLocal.collectAsState()
+    val localResults by viewModel.localSearchResults.collectAsState()
+    val isSearchingYT by viewModel.isSearchingYT.collectAsState()
+    val ytResults by viewModel.ytSearchResults.collectAsState()
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.voice_search),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                IconButton(onClick = onStartVoiceSearch) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Erneut sprechen",
+                        tint = YTRed
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.8f),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { viewModel.updateSearchQuery(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.voice_search_prompt)) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = YTRed,
+                        focusedLabelColor = YTRed,
+                        cursorColor = YTRed
+                    )
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.search_local_results),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    if (isSearchingLocal) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = YTRed)
+                        }
+                    } else if (localResults.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.search_no_local_results),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(localResults.size) { index ->
+                                val item = localResults[index]
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.playTrack(context, item)
+                                            onDismiss()
+                                        },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = YTRed,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.title,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = item.author,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = stringResource(R.string.found_in_playlist, item.playlistTitle),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = YTRedSoft,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (ytResults.isEmpty() && !isSearchingYT) {
+                        Button(
+                            onClick = { viewModel.performYTSearch() },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = YTRed),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.search_yt_button),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = stringResource(R.string.search_yt_results),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        if (isSearchingYT) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = YTRed)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(ytResults.size) { index ->
+                                    val item = ytResults[index]
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.playYTTrack(context, item)
+                                                onDismiss()
+                                            },
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = null,
+                                                tint = YTAccentBlue,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = item.title,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = item.author,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.close),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    )
 }

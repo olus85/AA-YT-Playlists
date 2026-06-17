@@ -8,6 +8,7 @@ import app.olus.ytmusic.autolauncher.data.repository.JellyfinRepository
 import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
 import app.olus.ytmusic.autolauncher.domain.model.Playlist
+import app.olus.ytmusic.autolauncher.domain.model.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,20 @@ import app.olus.ytmusic.autolauncher.data.repository.LyricsFetcher
 import app.olus.ytmusic.autolauncher.data.repository.LyricsState
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import app.olus.ytmusic.autolauncher.data.local.entity.TrackEntity
+import app.olus.ytmusic.autolauncher.util.AALogger
+
+data class PlaylistTrackSearchResult(
+    val title: String,
+    val author: String,
+    val videoId: String,
+    val playlistId: Int,
+    val playlistTitle: String,
+    val playlistSource: String
+)
 
 data class AddPlaylistState(
     val url: String = "",
@@ -224,5 +239,168 @@ class PlaylistViewModel @Inject constructor(
 
     fun resetAddPlaylistState() {
         _addPlaylistState.value = AddPlaylistState()
+    }
+
+    // ─── Voice Search State ───────────────────────────────────────────
+    private val _showSearchDialog = MutableStateFlow(false)
+    val showSearchDialog: StateFlow<Boolean> = _showSearchDialog.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _isSearchingLocal = MutableStateFlow(false)
+    val isSearchingLocal: StateFlow<Boolean> = _isSearchingLocal.asStateFlow()
+
+    private val _localSearchResults = MutableStateFlow<List<PlaylistTrackSearchResult>>(emptyList())
+    val localSearchResults: StateFlow<List<PlaylistTrackSearchResult>> = _localSearchResults.asStateFlow()
+
+    private val _isSearchingYT = MutableStateFlow(false)
+    val isSearchingYT: StateFlow<Boolean> = _isSearchingYT.asStateFlow()
+
+    private val _ytSearchResults = MutableStateFlow<List<Track>>(emptyList())
+    val ytSearchResults: StateFlow<List<Track>> = _ytSearchResults.asStateFlow()
+
+    fun openSearchDialog(initialQuery: String) {
+        _searchQuery.value = initialQuery
+        _ytSearchResults.value = emptyList()
+        _showSearchDialog.value = true
+        performLocalSearch(initialQuery)
+    }
+
+    fun closeSearchDialog() {
+        _showSearchDialog.value = false
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+        performLocalSearch(query)
+    }
+
+    fun performLocalSearch(query: String) {
+        if (query.isBlank()) {
+            _localSearchResults.value = emptyList()
+            return
+        }
+        _isSearchingLocal.value = true
+        viewModelScope.launch {
+            try {
+                val allTrackEntities = repository.getAllTrackEntities()
+                val playlistsList = repository.getAllPlaylistsOnce()
+                val playlistMap = playlistsList.associateBy { it.id }
+
+                val queryTokens = query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+
+                val results = if (queryTokens.isNotEmpty()) {
+                    allTrackEntities.filter { track ->
+                        val titleLower = track.title.lowercase()
+                        val authorLower = track.author.lowercase()
+                        queryTokens.all { token ->
+                            titleLower.contains(token) || authorLower.contains(token)
+                        }
+                    }.mapNotNull { track ->
+                        val playlist = playlistMap[track.playlistId] ?: return@mapNotNull null
+                        PlaylistTrackSearchResult(
+                            title = track.title,
+                            author = track.author,
+                            videoId = track.videoId,
+                            playlistId = track.playlistId,
+                            playlistTitle = playlist.title,
+                            playlistSource = playlist.source
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+                _localSearchResults.value = results
+            } catch (e: Exception) {
+                AALogger.logError("PlaylistViewModel", "Local search failed", e)
+            } finally {
+                _isSearchingLocal.value = false
+            }
+        }
+    }
+
+    fun performYTSearch() {
+        val query = _searchQuery.value
+        if (query.isBlank()) return
+        
+        _isSearchingYT.value = true
+        viewModelScope.launch {
+            try {
+                val results = metadataFetcher.searchTracks(query)
+                _ytSearchResults.value = results
+            } catch (e: Exception) {
+                AALogger.logError("PlaylistViewModel", "YouTube search failed", e)
+            } finally {
+                _isSearchingYT.value = false
+            }
+        }
+    }
+
+    fun playTrack(context: Context, track: PlaylistTrackSearchResult) {
+        if (track.playlistSource == "JELLYFIN") {
+            mediaSyncManager.onPlayJellyfinTrack?.invoke(track.playlistId, track.videoId)
+        } else {
+            playYouTubeTrack(context, track.videoId, track.playlistId)
+        }
+    }
+
+    fun playYTTrack(context: Context, track: Track) {
+        playYouTubeTrack(context, track.videoId, null)
+    }
+
+    private fun playYouTubeTrack(context: Context, videoId: String, playlistId: Int?) {
+        viewModelScope.launch {
+            val listId = playlistId?.let { repository.getPlaylistById(it) }
+                ?.url?.let { Uri.parse(it).getQueryParameter("list") }
+            val url = if (listId != null) {
+                "https://music.youtube.com/watch?v=$videoId&list=$listId"
+            } else {
+                "https://music.youtube.com/watch?v=$videoId"
+            }
+            
+            AALogger.forceLog("PlaylistViewModel", "playYouTubeTrack: activeController = ${mediaSyncManager.activeController.value?.packageName}")
+            val controller = mediaSyncManager.activeController.value
+            val ytMusicPackages = listOf(
+                "app.rvx.android.apps.youtube.music",
+                "app.revanced.android.apps.youtube.music",
+                "com.google.android.apps.youtube.music"
+            )
+            if (controller != null && ytMusicPackages.contains(controller.packageName)) {
+                try {
+                    AALogger.forceLog("PlaylistViewModel", "Trying transportControls.playFromUri for $url")
+                    controller.transportControls.playFromUri(Uri.parse(url), null)
+                    return@launch
+                } catch (e: Exception) {
+                    AALogger.logError("PlaylistViewModel", "playFromUri failed", e)
+                }
+            }
+            
+            // Fallback: Launch Intent
+            AALogger.forceLog("PlaylistViewModel", "Falling back to Intent launch for $url")
+            var started = false
+            for (pkg in ytMusicPackages) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                        `package` = pkg
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                    context.startActivity(intent)
+                    started = true
+                    break
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+            if (!started) {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                } catch (e: Exception) {
+                    AALogger.logError("PlaylistViewModel", "All launch attempts failed", e)
+                }
+            }
+        }
     }
 }

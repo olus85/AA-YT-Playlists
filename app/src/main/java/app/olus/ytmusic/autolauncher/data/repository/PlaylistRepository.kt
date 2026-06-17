@@ -78,6 +78,10 @@ class PlaylistRepository(
         }
     }
 
+    suspend fun getAllTrackEntities(): List<TrackEntity> {
+        return trackDao.getAllTracks()
+    }
+
     suspend fun saveTracks(playlistId: Int, tracks: List<Track>) {
         val entities = tracks.mapIndexed { index, track ->
             TrackEntity(

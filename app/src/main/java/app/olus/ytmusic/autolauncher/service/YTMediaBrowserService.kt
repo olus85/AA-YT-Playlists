@@ -155,6 +155,10 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             }
         ).apply { initialize() }
 
+        mediaSyncManager.onPlayJellyfinTrack = { playlistId, trackId ->
+            handleJellyfinTrackClick("jftrack_${playlistId}_${trackId}")
+        }
+
         startProxySync()
     }
 
@@ -163,6 +167,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         AALogger.forceLog(TAG, "onDestroy")
         job.cancel()
         jellyfinNativePlayer.release()
+        mediaSyncManager.onPlayJellyfinTrack = null
         mediaSession.isActive = false
         mediaSession.release()
     }
@@ -179,7 +184,10 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         clientPackageName: String, clientUid: Int, rootHints: Bundle?
     ): BrowserRoot {
         AALogger.forceLog(TAG, "onGetRoot called by client: $clientPackageName (uid=$clientUid)")
-        return BrowserRoot(ROOT_ID, null)
+        val extras = Bundle().apply {
+            putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+        }
+        return BrowserRoot(ROOT_ID, extras)
     }
 
     override fun onLoadChildren(
@@ -192,6 +200,80 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             parentId == FOLDER_PLAYLISTS -> loadPlaylists(result)
             parentId.startsWith("playlist_") -> loadTracks(parentId, result)
             else -> result.sendResult(mutableListOf())
+        }
+    }
+
+    override fun onSearch(
+        query: String,
+        extras: Bundle?,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>
+    ) {
+        AALogger.forceLog(TAG, "onSearch called with query: '$query'")
+        if (query.isBlank()) {
+            result.sendResult(mutableListOf())
+            return
+        }
+
+        result.detach()
+        scope.launch {
+            try {
+                // 1. Search local tracks (token-based)
+                val allTrackEntities = repository.getAllTrackEntities()
+                val playlistsList = repository.getAllPlaylistsOnce()
+                val playlistMap = playlistsList.associateBy { it.id }
+
+                val queryTokens = query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+                
+                val localMatches = if (queryTokens.isNotEmpty()) {
+                    allTrackEntities.filter { track ->
+                        val titleLower = track.title.lowercase()
+                        val authorLower = track.author.lowercase()
+                        queryTokens.all { token ->
+                            titleLower.contains(token) || authorLower.contains(token)
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+
+                val items = mutableListOf<MediaBrowserCompat.MediaItem>()
+
+                // Add local matches
+                localMatches.forEach { track ->
+                    val playlist = playlistMap[track.playlistId]
+                    val playlistTitle = playlist?.title ?: "Playlist"
+                    val desc = MediaDescriptionCompat.Builder()
+                        .setMediaId("track_${track.playlistId}_${track.videoId}")
+                        .setTitle(track.title)
+                        .setSubtitle("${track.author} • in $playlistTitle")
+                        .setIconUri(Uri.parse("https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg"))
+                        .build()
+                    items.add(MediaBrowserCompat.MediaItem(desc, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE))
+                }
+
+                // 2. YT Music search fallback via Invidious
+                try {
+                    AALogger.forceLog(TAG, "onSearch: Fetching YT Music fallback for query '$query'")
+                    val ytTracks = metadataFetcher.searchTracks(query, limit = 5)
+                    ytTracks.forEach { track ->
+                        val desc = MediaDescriptionCompat.Builder()
+                            .setMediaId("track_yt_${track.videoId}")
+                            .setTitle(track.title)
+                            .setSubtitle("${track.author} • YouTube Music")
+                            .setIconUri(Uri.parse("https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg"))
+                            .build()
+                        items.add(MediaBrowserCompat.MediaItem(desc, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE))
+                    }
+                } catch (e: Exception) {
+                    AALogger.logError(TAG, "YT Music fallback search failed", e)
+                }
+
+                AALogger.forceLog(TAG, "onSearch: Found ${items.size} total results for '$query'")
+                result.sendResult(items)
+            } catch (e: Exception) {
+                AALogger.logError(TAG, "Error performing search in service", e)
+                result.sendResult(mutableListOf())
+            }
         }
     }
 
@@ -535,6 +617,17 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         // Check if it's a Jellyfin track
         if (mediaId.startsWith("jftrack_")) {
             handleJellyfinTrackClick(mediaId)
+            return
+        }
+
+        if (mediaId.startsWith("track_yt_")) {
+            val videoId = mediaId.removePrefix("track_yt_")
+            beginLaunch()
+            scope.launch {
+                val url = "https://music.youtube.com/watch?v=$videoId"
+                AALogger.forceLog(TAG, "Launching search YT track: $url")
+                launchYouTubeMusic(url)
+            }
             return
         }
 

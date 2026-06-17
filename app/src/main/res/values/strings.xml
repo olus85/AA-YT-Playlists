@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">YT Music Auto Launcher</string>
-    <string name="yt_playlists">YT Playlists</string>
+    <string name="app_name">Playlist Launcher</string>
+    <string name="yt_playlists">Playlist Launcher</string>
     <string name="playlist_count_plural">%d Playlisten</string>
     <string name="playlist_count_singular">%d Playlist</string>
     <string name="no_playlists">Keine Playlisten</string>
@@ -40,4 +40,15 @@
     <string name="no_lyrics">Keine Songtexte verfügbar</string>
     <string name="lyrics_loading">Lade Songtexte…</string>
     <string name="close">Schließen</string>
+    <string name="voice_search">Sprachsuche</string>
+    <string name="voice_search_prompt">Titel oder Interpret sprechen…</string>
+    <string name="voice_search_not_available">Sprachsuche auf diesem Gerät nicht verfügbar</string>
+    <string name="search_local_results">Playlisten Treffer</string>
+    <string name="search_no_local_results">Keine passenden Songs in deinen Playlisten</string>
+    <string name="search_yt_button">In YouTube Music suchen</string>
+    <string name="search_yt_results">YouTube Music Treffer</string>
+    <string name="search_no_yt_results">Keine Ergebnisse in YouTube Music</string>
+    <string name="found_in_playlist">Gefunden in: %s</string>
+    <string name="no_playback_active">Keine Wiedergabe aktiv</string>
+    <string name="tap_to_search">Tippe für Sprachsuche</string>
 </resources>

@@ -1,6 +1,6 @@
-# AA YT Playlists
+# Playlist Launcher
 
-AA YT Playlists is an Android Auto application that allows users to manage and play YouTube Music playlists — and **Jellyfin music libraries** — directly from their car's headunit. It acts as a transparent **Media Session Proxy** between Android Auto and YouTube Music, providing native playback controls, real-time metadata display, and seamless track/playlist launching.
+Playlist Launcher (formerly AA YT Playlists) is an Android Auto application that allows users to manage and play YouTube Music playlists — and **Jellyfin music libraries** — directly from their car's headunit. It acts as a transparent **Media Session Proxy** between Android Auto and YouTube Music, providing native playback controls, real-time metadata display, and seamless track/playlist launching.
 
 ## Features
 
