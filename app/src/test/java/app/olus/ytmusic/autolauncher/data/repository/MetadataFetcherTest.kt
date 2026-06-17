@@ -3,6 +3,7 @@ package app.olus.ytmusic.autolauncher.data.repository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import app.olus.ytmusic.autolauncher.util.SearchQueryCleaner
 
 class MetadataFetcherTest {
 
@@ -68,5 +69,20 @@ class MetadataFetcherTest {
         println("LZK title: ${meta?.title}, trackCount: ${meta?.trackCount}, author: ${meta?.duration}")
         assertEquals("LZK", meta?.title)
         assertEquals("66 Songs", meta?.trackCount)
+    }
+
+    @Test
+    fun testCleanVoiceQuery() {
+        val clean = { q: String? -> SearchQueryCleaner.cleanVoiceQuery(q) }
+        
+        assertEquals("nur die nacht", clean("spiele nur die nacht auf playlist launcher"))
+        assertEquals("levels", clean("play levels on playlist launcher"))
+        assertEquals("standard", clean("suche nach standard auf youtube music"))
+        assertEquals("some track", clean("some track"))
+        assertEquals("launcher", clean("launcher"))
+        assertEquals("play", clean("play"))
+        assertEquals("nur die nacht", clean("suche spiele nur die nacht auf playlist launcher auf youtube music"))
+        assertEquals("", clean(null))
+        assertEquals("", clean("  "))
     }
 }

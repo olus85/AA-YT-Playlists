@@ -24,6 +24,7 @@ import app.olus.ytmusic.autolauncher.data.repository.MetadataFetcher
 import app.olus.ytmusic.autolauncher.data.repository.PlaylistRepository
 import app.olus.ytmusic.autolauncher.domain.model.Track
 import app.olus.ytmusic.autolauncher.util.AALogger
+import app.olus.ytmusic.autolauncher.util.SearchQueryCleaner
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -209,7 +210,9 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
     ) {
         AALogger.forceLog(TAG, "onSearch called with query: '$query'")
-        if (query.isBlank()) {
+        val cleanedQuery = SearchQueryCleaner.cleanVoiceQuery(query)
+        AALogger.forceLog(TAG, "onSearch: cleaned query='$cleanedQuery'")
+        if (cleanedQuery.isBlank()) {
             result.sendResult(mutableListOf())
             return
         }
@@ -222,7 +225,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                 val playlistsList = repository.getAllPlaylistsOnce()
                 val playlistMap = playlistsList.associateBy { it.id }
 
-                val queryTokens = query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+                val queryTokens = cleanedQuery.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
                 
                 val localMatches = if (queryTokens.isNotEmpty()) {
                     allTrackEntities.filter { track ->
@@ -253,8 +256,8 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
                 // 2. YT Music search fallback via Invidious
                 try {
-                    AALogger.forceLog(TAG, "onSearch: Fetching YT Music fallback for query '$query'")
-                    val ytTracks = metadataFetcher.searchTracks(query, limit = 5)
+                    AALogger.forceLog(TAG, "onSearch: Fetching YT Music fallback for query '$cleanedQuery'")
+                    val ytTracks = metadataFetcher.searchTracks(cleanedQuery, limit = 5)
                     ytTracks.forEach { track ->
                         val desc = MediaDescriptionCompat.Builder()
                             .setMediaId("track_yt_${track.videoId}")
@@ -268,7 +271,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     AALogger.logError(TAG, "YT Music fallback search failed", e)
                 }
 
-                AALogger.forceLog(TAG, "onSearch: Found ${items.size} total results for '$query'")
+                AALogger.forceLog(TAG, "onSearch: Found ${items.size} total results for '$cleanedQuery'")
                 result.sendResult(items)
             } catch (e: Exception) {
                 AALogger.logError(TAG, "Error performing search in service", e)
@@ -532,14 +535,16 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
 
         override fun onPlayFromSearch(query: String?, extras: Bundle?) {
             AALogger.forceLog(TAG, "onPlayFromSearch: query='$query'")
-            if (query.isNullOrBlank()) return
+            val cleanedQuery = SearchQueryCleaner.cleanVoiceQuery(query)
+            AALogger.forceLog(TAG, "onPlayFromSearch: cleaned query='$cleanedQuery'")
+            if (cleanedQuery.isBlank()) return
 
             beginLaunch()
 
             // Show "Searching..." metadata while searching
             mediaSession.setMetadata(
                 MediaMetadataCompat.Builder()
-                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Suche: $query")
+                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Suche: $cleanedQuery")
                     .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Wird gesucht...")
                     .build()
             )
@@ -547,7 +552,7 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
             scope.launch {
                 try {
                     // 1. Try Jellyfin first (if configured)
-                    val jfTrack = jellyfinRepository.searchTrack(query)
+                    val jfTrack = jellyfinRepository.searchTrack(cleanedQuery)
                     if (jfTrack != null) {
                         AALogger.forceLog(TAG, "Voice search: Jellyfin hit '${jfTrack.name}' by ${jfTrack.artist}")
                         mainHandler.post {
@@ -557,20 +562,20 @@ class YTMediaBrowserService : MediaBrowserServiceCompat() {
                     }
 
                     // 2. Fallback: Invidious search
-                    val track = metadataFetcher.searchTrack(query)
+                    val track = metadataFetcher.searchTrack(cleanedQuery)
                     if (track != null) {
                         AALogger.forceLog(TAG, "Voice search: Invidious hit '${track.title}' by ${track.author} (${track.videoId})")
                         val url = "https://music.youtube.com/watch?v=${track.videoId}"
                         launchYouTubeMusic(url)
                     } else {
-                        AALogger.logError(TAG, "Voice search: no results for '$query'")
+                        AALogger.logError(TAG, "Voice search: no results for '$cleanedQuery'")
                         mediaSession.setPlaybackState(
                             PlaybackStateCompat.Builder()
                                 .setActions(SUPPORTED_ACTIONS)
                                 .setState(PlaybackStateCompat.STATE_ERROR, 0, 1.0f)
                                 .setErrorMessage(
                                     PlaybackStateCompat.ERROR_CODE_NOT_SUPPORTED,
-                                    "Kein Ergebnis f\u00fcr \"$query\""
+                                    "Kein Ergebnis f\u00fcr \"$cleanedQuery\""
                                 )
                                 .build()
                         )

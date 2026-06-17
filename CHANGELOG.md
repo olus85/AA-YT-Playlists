@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.8.1] - 2026-06-18
+
+### Fixed
+- **Voice Search Query Cleaning**: Added `SearchQueryCleaner` to filter out assistant voice conversational prefix/suffix phrases (such as "spiele", "play", "auf playlist launcher", "on youtube music"). This ensures that clean, precise track names are queried in `onSearch` and `onPlayFromSearch`, preventing search results polluted by trigger words.
+
 ## [2.8.0] - 2026-06-18
 
 ### Added
